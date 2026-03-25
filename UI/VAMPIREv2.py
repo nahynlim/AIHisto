@@ -13,8 +13,12 @@ import time
 from datetime import datetime
 from typing import Optional, Callable
 import os
+import shutil
 import subprocess
 from pathlib import Path
+import numpy as np
+import pandas as pd
+from PIL import Image
 from mainbody import mainbody
 from getboundary import getboundary
 
@@ -63,6 +67,152 @@ class LegacyProgressAdapter:
 
     def update(self):
         return
+
+
+IMAGE_EXTENSIONS = {".tiff", ".tif", ".jpeg", ".jpg", ".png", ".bmp", ".gif"}
+MASK_SUFFIX_MAP = {
+    "damaged": "_BWdam",
+    "undamaged": "_BWnotDam",
+    "low_shg": "_BWlowSHG",
+    "high_shg": "_BWhighSHG",
+}
+
+
+def iter_image_files(folder, tag=None):
+    """Yield supported image paths from a folder, optionally filtered by tag."""
+    folder_path = Path(folder)
+    if not folder_path.exists():
+        return []
+
+    tag_text = str(tag).lower().strip() if tag is not None else ""
+    image_paths = []
+    for path in sorted(folder_path.iterdir()):
+        if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+            continue
+        if tag_text and tag_text not in path.name.lower():
+            continue
+        image_paths.append(path)
+    return image_paths
+
+
+def normalize_mask_key(stem):
+    """Normalize a filename stem to a base key for image/mask matching."""
+    normalized = str(stem)
+    for suffix in MASK_SUFFIX_MAP.values():
+        if normalized.lower().endswith(suffix.lower()):
+            return normalized[:-len(suffix)]
+    return normalized
+
+
+def build_mask_index(mask_folder):
+    """Index masks by normalized base filename."""
+    mask_dir = Path(mask_folder)
+    if not mask_dir.exists():
+        return {}
+
+    mask_index = {}
+    for path in mask_dir.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+            continue
+        base_key = normalize_mask_key(path.stem).lower()
+        suffix_key = ""
+        stem_lower = path.stem.lower()
+        for mask_name, suffix in MASK_SUFFIX_MAP.items():
+            if stem_lower.endswith(suffix.lower()):
+                suffix_key = mask_name
+                break
+        mask_index.setdefault(base_key, {})
+        mask_index[base_key][suffix_key] = path
+    return mask_index
+
+
+def apply_mask_to_image_array(image_array, mask_array):
+    """Apply a binary mask to an image array while preserving dtype."""
+    if image_array.ndim == 2:
+        return image_array * mask_array.astype(image_array.dtype)
+    expanded_mask = mask_array[..., None].astype(image_array.dtype)
+    return image_array * expanded_mask
+
+
+def apply_masks_for_csv_dataset(csv_path, mask_folder, output_root, mask_choice, status_callback=None):
+    """Apply masks to each source image listed in the dataset CSV."""
+    ui = pd.read_csv(csv_path)
+    mask_index = build_mask_index(mask_folder)
+    if not mask_index:
+        raise FileNotFoundError(f"No mask images were found in: {mask_folder}")
+
+    output_root = Path(output_root)
+    masked_root = output_root / "masked_source_images"
+    masked_root.mkdir(parents=True, exist_ok=True)
+
+    processed = 0
+    missing = []
+    resized = []
+
+    setpaths = ui["set location"]
+    tags = ui["tag"] if "tag" in ui.columns else [None] * len(ui)
+    conditions = ui["condition"] if "condition" in ui.columns else [None] * len(ui)
+
+    total_sets = max(len(setpaths), 1)
+    for set_idx, setfolder in enumerate(setpaths):
+        tag = tags.iloc[set_idx] if hasattr(tags, "iloc") else tags[set_idx]
+        condition = conditions.iloc[set_idx] if hasattr(conditions, "iloc") else conditions[set_idx]
+        image_paths = iter_image_files(setfolder, tag)
+        set_name = str(condition).strip() if pd.notna(condition) and str(condition).strip() else Path(setfolder).name
+        set_output = masked_root / set_name
+        set_output.mkdir(parents=True, exist_ok=True)
+
+        for image_path in image_paths:
+            key = image_path.stem.lower()
+            candidates = [
+                key,
+                normalize_mask_key(image_path.stem).lower(),
+            ]
+
+            mask_path = None
+            for candidate in candidates:
+                mask_options = mask_index.get(candidate, {})
+                if mask_choice in mask_options:
+                    mask_path = mask_options[mask_choice]
+                    break
+                if "" in mask_options:
+                    mask_path = mask_options[""]
+                    break
+
+            if mask_path is None:
+                missing.append(image_path.name)
+                continue
+
+            image_array = np.array(Image.open(image_path))
+            mask_array = np.array(Image.open(mask_path))
+            if mask_array.ndim == 3:
+                mask_array = mask_array[..., 0]
+            mask_bool = mask_array > 0
+
+            if mask_bool.shape != image_array.shape[:2]:
+                resized.append(f"{image_path.name} <- {mask_path.name}")
+                mask_img = Image.fromarray((mask_bool.astype(np.uint8) * 255))
+                mask_img = mask_img.resize((image_array.shape[1], image_array.shape[0]), Image.Resampling.NEAREST)
+                mask_bool = np.array(mask_img) > 0
+
+            masked_array = apply_mask_to_image_array(image_array, mask_bool)
+            Image.fromarray(masked_array).save(set_output / image_path.name)
+            processed += 1
+
+        if status_callback is not None:
+            progress = 60 + int(((set_idx + 1) / total_sets) * 35)
+            status_callback(
+                f"Applying masks to source images ({set_idx + 1}/{total_sets} sets)...",
+                "processing",
+                progress,
+            )
+
+    return {
+        "processed": processed,
+        "missing": missing,
+        "resized": resized,
+        "output_folder": str(masked_root),
+    }
 
 
 class ToolTip:
@@ -434,6 +584,12 @@ class SegmentationPanel(ttk.LabelFrame):
             return target
         return cp_exec
 
+    def cp_executable_exists(self, cp_exec):
+        """Check whether the chosen CellProfiler executable is callable."""
+        if not cp_exec:
+            return False
+        return os.path.isfile(cp_exec) or shutil.which(cp_exec) is not None
+
     def resolve_preset_pipeline(self, filename):
         """Resolve preset pipeline filename from common repo-relative paths."""
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -462,7 +618,17 @@ class SegmentationPanel(ttk.LabelFrame):
         cp_exec = self.resolve_cp_executable(cp_exec)
         pipeline_choice = self.pipeline_choice.get()
         pipeline_path = self.resolve_pipeline_path()
-        output_dir = os.path.join(os.getcwd(), "results", "segmented")
+
+        if not self.cp_executable_exists(cp_exec):
+            self.status_callback("Error: CellProfiler executable not found", "error", 0)
+            messagebox.showerror(
+                "CellProfiler Not Found",
+                "The selected CellProfiler executable could not be found.\n\n"
+                f"Current value:\n{cp_exec or '(empty)'}\n\n"
+                "Use the browse button to select the CellProfiler executable, or enter a command "
+                "that is available on your PATH."
+            )
+            return
 
         if pipeline_choice != self.launch_option:
             if not pipeline_path:
@@ -490,13 +656,21 @@ class SegmentationPanel(ttk.LabelFrame):
             env.pop("PYTHONHOME", None)
 
             if pipeline_path:
-                cmd = [cp_exec, "-p", pipeline_path, "-i", raw_dir]
-                run_msg = "Launching CellProfiler with pipeline and input folder..."
+                cmd = [cp_exec, "-p", pipeline_path]
+                run_msg = "Launching CellProfiler with selected pipeline..."
             else:
-                cmd = [cp_exec, "-i", raw_dir]
-                run_msg = "Launching CellProfiler interactive app with input folder..."
+                cmd = [cp_exec]
+                run_msg = "Launching CellProfiler interactive app..."
             self.after(0, lambda: self.status_callback(run_msg, "processing", 40))
-            result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            try:
+                result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            except Exception as exc:
+                self.after(0, lambda: self.status_callback("CellProfiler failed", "error", 0))
+                self.after(0, lambda: messagebox.showerror(
+                    "Segmentation Failed",
+                    f"Could not start CellProfiler.\n\nCommand:\n{' '.join(cmd)}\n\nError:\n{exc}"
+                ))
+                return
 
             if result.returncode != 0:
                 stderr_tail = (result.stderr or "").strip()
@@ -790,6 +964,7 @@ class BuildModelPanel(ttk.LabelFrame):
         if folder:
             self.output_folder.delete(0, tk.END)
             self.output_folder.insert(0, folder)
+
     
     def increase_modes(self):
         current = self.shape_modes_var.get()
@@ -805,10 +980,10 @@ class BuildModelPanel(ttk.LabelFrame):
     
     def build_model(self):
         """Build model by running getboundary + mainbody pipeline."""
-        csv_path = self.csv_upload.get_file()
-        if not csv_path:
-            self.status_callback("Error: Please select an image set CSV file", 'error', 0)
-            messagebox.showerror("Error", "Please select an image set CSV file")
+        image_folder = self.image_folder_upload.get_file()
+        if not image_folder:
+            self.status_callback("Error: Please select an images folder", 'error', 0)
+            messagebox.showerror("Error", "Please select an images folder")
             return
 
         if not self.model_name.get().strip():
@@ -905,6 +1080,7 @@ class ApplyModelPanel(ttk.LabelFrame):
         self.status_callback = status_callback
         self.built_model_getter = built_model_getter
         self.use_built_model_var = tk.BooleanVar(value=False)
+        self.valid_pipeline_ext = {".cpproj", ".cppipe"}
         
         # Built model notice (will be shown when model is available)
         self.model_notice_frame = tk.Frame(self, bg="#e8f5e9", relief=tk.RIDGE, bd=2)
@@ -923,39 +1099,70 @@ class ApplyModelPanel(ttk.LabelFrame):
         ttk.Checkbutton(notice_content, text="Use this model", variable=self.use_built_model_var,
                        command=self.toggle_model_file).pack(side=tk.RIGHT)
         
-        # Upload fields - side by side
-        upload_frame = ttk.Frame(self)
-        upload_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        left_frame = ttk.Frame(upload_frame)
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
-        
-        self.csv_upload = DragDropUploadField(
-            left_frame,
-            "Image Set (CSV)",
-            "CSV file with image paths",
-            ".csv",
-            "Upload a CSV file containing paths to images for analysis"
+        cp_launch_frame = tk.Frame(self, bg="#f0f0f0", relief=tk.RIDGE, bd=2)
+        cp_launch_frame.pack(fill=tk.X, pady=(0, 10))
+
+        cp_launch_label = ttk.Frame(cp_launch_frame)
+        cp_launch_label.pack(fill=tk.X, padx=10, pady=(8, 4))
+        ttk.Label(cp_launch_label, text="CellProfiler Masking Pipeline", font=("Arial", 10, "bold")).pack(side=tk.LEFT)
+        cp_help = ttk.Label(cp_launch_label, text=" i", cursor="hand2")
+        cp_help.pack(side=tk.LEFT)
+        ToolTip(
+            cp_help,
+            "Open a CellProfiler masking pipeline, such as Masking_pipeline.cpproj, to apply SHG masks onto staining images."
         )
-        self.csv_upload.pack(fill=tk.BOTH, expand=True)
-        
-        right_frame = ttk.Frame(upload_frame)
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
-        
-        self.raw_upload = DragDropUploadField(
-            right_frame,
-            "Raw Images (Optional)",
-            "Direct image upload",
+
+        cp_body = ttk.Frame(cp_launch_frame)
+        cp_body.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        cp_exec_label = ttk.Frame(cp_body)
+        cp_exec_label.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(cp_exec_label, text="CellProfiler Executable", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
+
+        cp_exec_input = ttk.Frame(cp_body)
+        cp_exec_input.pack(fill=tk.X, pady=(0, 10))
+        self.mask_cp_executable = ttk.Entry(cp_exec_input)
+        self.mask_cp_executable.insert(0, self.get_default_cp_executable())
+        self.mask_cp_executable.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        ttk.Button(cp_exec_input, text="...", width=3, command=self.browse_mask_cp_executable).pack(side=tk.RIGHT)
+
+        pipeline_label = ttk.Frame(cp_body)
+        pipeline_label.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(pipeline_label, text="Masking Pipeline Option", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
+
+        preset_pipeline = self.resolve_masking_pipeline_preset()
+        self.mask_pipeline_choice = tk.StringVar(
+            value="Masking Pipeline" if preset_pipeline else "Custom Pipeline"
+        )
+        self.mask_pipeline_combo = ttk.Combobox(
+            cp_body,
+            textvariable=self.mask_pipeline_choice,
+            state="readonly",
+            values=["Masking Pipeline", "Open CellProfiler"]
+        )
+        self.mask_pipeline_combo.pack(fill=tk.X, pady=(0, 10))
+        self.mask_pipeline_combo.bind("<<ComboboxSelected>>", lambda _event: self.toggle_mask_pipeline_upload())
+        self.toggle_mask_pipeline_upload()
+
+        cp_launch_btn = ttk.Button(cp_body, text="Open Masking Pipeline", command=self.start_masking_pipeline)
+        cp_launch_btn.pack(fill=tk.X)
+        ToolTip(
+            cp_launch_btn,
+            "Launch CellProfiler with the selected masking pipeline. Choose image, mask, and output folders inside CellProfiler."
+        )
+
+        self.image_folder_upload = DragDropUploadField(
+            self,
+            "Images Folder",
+            "Folder with images to analyze",
             "image/*",
-            "Alternatively, upload raw images directly for analysis",
-            allow_multiple=True
+            "Select the folder containing the images you want to analyze with the model."
         )
-        self.raw_upload.pack(fill=tk.BOTH, expand=True)
-        
-        # Model file upload
+        self.image_folder_upload.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
         self.model_upload_container = ttk.Frame(self)
         self.model_upload_container.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
+
         self.model_upload = DragDropUploadField(
             self.model_upload_container,
             "Model to Apply",
@@ -964,7 +1171,7 @@ class ApplyModelPanel(ttk.LabelFrame):
             "Upload a previously saved model file to apply to the images"
         )
         self.model_upload.pack(fill=tk.BOTH, expand=True)
-        
+
         # Output folder
         folder_frame = ttk.Frame(self)
         folder_frame.pack(fill=tk.X, pady=(0, 10))
@@ -996,7 +1203,149 @@ class ApplyModelPanel(ttk.LabelFrame):
         if folder:
             self.output_folder.delete(0, tk.END)
             self.output_folder.insert(0, folder)
-    
+
+    def browse_mask_cp_executable(self):
+        """Browse for CellProfiler executable used by the masking pipeline."""
+        exe = filedialog.askopenfilename()
+        if exe:
+            self.mask_cp_executable.delete(0, tk.END)
+            self.mask_cp_executable.insert(0, exe)
+
+    def toggle_mask_pipeline_upload(self):
+        """No-op placeholder now that custom mode simply opens CellProfiler."""
+        return
+
+    def get_default_cp_executable(self):
+        """Best-effort default CellProfiler executable path."""
+        windows_lnk = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\CellProfiler.lnk"
+        if os.path.isfile(windows_lnk):
+            return windows_lnk
+        mac_cp = "/Applications/CellProfiler.app/Contents/MacOS/cp"
+        if os.path.isfile(mac_cp):
+            return mac_cp
+        return "cellprofiler"
+
+    def resolve_cp_executable(self, cp_exec):
+        """Resolve a Windows .lnk shortcut to its target executable when possible."""
+        if not cp_exec:
+            return cp_exec
+        if not cp_exec.lower().endswith(".lnk"):
+            return cp_exec
+
+        escaped = cp_exec.replace("'", "''")
+        ps_cmd = (
+            "$ws = New-Object -ComObject WScript.Shell; "
+            f"$s = $ws.CreateShortcut('{escaped}'); "
+            "Write-Output $s.TargetPath"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            capture_output=True,
+            text=True
+        )
+        target = (result.stdout or "").strip()
+        if result.returncode == 0 and target:
+            return target
+        return cp_exec
+
+    def cp_executable_exists(self, cp_exec):
+        """Check whether the chosen CellProfiler executable is callable."""
+        if not cp_exec:
+            return False
+        return os.path.isfile(cp_exec) or shutil.which(cp_exec) is not None
+
+    def resolve_masking_pipeline_preset(self):
+        """Resolve repo-local masking pipeline when present."""
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates = [
+            os.path.join(base_dir, "pipelines", "Masking_pipeline.cpproj"),
+            os.path.join(base_dir, "pipelines", "Masking_pipeline.cppipe"),
+            os.path.join(base_dir, "Masking_pipeline.cpproj"),
+            os.path.join(base_dir, "Masking_pipeline.cppipe"),
+            os.path.join(os.getcwd(), "pipelines", "Masking_pipeline.cpproj"),
+            os.path.join(os.getcwd(), "pipelines", "Masking_pipeline.cppipe"),
+            os.path.join(os.getcwd(), "Masking_pipeline.cpproj"),
+            os.path.join(os.getcwd(), "Masking_pipeline.cppipe"),
+        ]
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+        return None
+
+    def resolve_selected_masking_pipeline(self):
+        """Resolve the pipeline path from the preset/custom dropdown."""
+        if self.mask_pipeline_choice.get() == "Open CellProfiler":
+            return None
+        return self.resolve_masking_pipeline_preset()
+
+    def start_masking_pipeline(self):
+        """Launch CellProfiler with the masking pipeline."""
+        cp_exec = self.resolve_cp_executable(self.mask_cp_executable.get().strip())
+        pipeline_path = self.resolve_selected_masking_pipeline()
+
+        if not self.cp_executable_exists(cp_exec):
+            self.status_callback("Error: CellProfiler executable not found", "error", 0)
+            messagebox.showerror(
+                "CellProfiler Not Found",
+                "The selected CellProfiler executable could not be found.\n\n"
+                f"Current value:\n{cp_exec or '(empty)'}\n\n"
+                "Use the browse button to select the CellProfiler executable, or enter a command on your PATH."
+            )
+            return
+
+        if self.mask_pipeline_choice.get() != "Open CellProfiler" and not pipeline_path:
+            self.status_callback("Error: Please select a masking pipeline", "error", 0)
+            messagebox.showerror("Error", "Please upload Masking_pipeline.cpproj or Masking_pipeline.cppipe.")
+            return
+
+        if pipeline_path and Path(pipeline_path).suffix.lower() not in self.valid_pipeline_ext:
+            self.status_callback("Error: Masking pipeline must be .cpproj or .cppipe", "error", 0)
+            messagebox.showerror("Error", "Masking pipeline must be a .cpproj or .cppipe file.")
+            return
+
+        def process():
+            self.after(0, lambda: self.status_callback("Launching CellProfiler masking pipeline...", "processing", 20))
+            cmd = [cp_exec] if pipeline_path is None else [cp_exec, "-p", pipeline_path]
+            try:
+                subprocess.Popen(cmd)
+            except Exception as exc:
+                self.after(0, lambda: self.status_callback("CellProfiler failed", "error", 0))
+                self.after(0, lambda: messagebox.showerror(
+                    "CellProfiler Launch Failed",
+                    f"Could not start CellProfiler.\n\nCommand:\n{' '.join(cmd)}\n\nError:\n{exc}"
+                ))
+                return
+
+            self.after(0, lambda: self.status_callback("CellProfiler masking pipeline launched", "success", 100))
+            self.after(0, lambda: messagebox.showinfo(
+                "CellProfiler Launched",
+                f"CellProfiler: {cp_exec}\n"
+                + (f"Masking pipeline: {pipeline_path}\n" if pipeline_path else "Mode: Open CellProfiler only\n")
+                + "Choose the staining-image input folder, mask folder, and output folder inside CellProfiler."
+            ))
+
+        threading.Thread(target=process, daemon=True).start()
+
+    def create_apply_dataset_csv(self, image_folder, output_folder):
+        """Create a temporary dataset CSV so the legacy pipeline can run from a folder."""
+        image_folder = os.path.abspath(image_folder)
+        output_folder = os.path.abspath(output_folder)
+        os.makedirs(output_folder, exist_ok=True)
+
+        folder_name = os.path.basename(os.path.normpath(image_folder)) or "dataset"
+        csv_path = os.path.join(output_folder, f"{folder_name}_apply_dataset.csv")
+        df = pd.DataFrame([
+            {
+                "set ID": 1,
+                "condition": folder_name,
+                "set location": image_folder,
+                "tag": "",
+                "note": "Auto-generated from Apply Model folder selection",
+            }
+        ])
+        df.to_csv(csv_path, index=False)
+        return csv_path
+
     def update_model_notice(self, model_data):
         """Update the built model notice"""
         if model_data:
@@ -1015,10 +1364,10 @@ class ApplyModelPanel(ttk.LabelFrame):
     
     def apply_model(self):
         """Apply model by running getboundary + mainbody pipeline."""
-        csv_path = self.csv_upload.get_file()
-        if not csv_path:
-            self.status_callback("Error: Please select an image set CSV file", 'error', 0)
-            messagebox.showerror("Error", "Please select an image set CSV file")
+        image_folder = self.image_folder_upload.get_file()
+        if not image_folder:
+            self.status_callback("Error: Please select an images folder", 'error', 0)
+            messagebox.showerror("Error", "Please select an images folder")
             return
 
         built_model = self.built_model_getter()
@@ -1042,6 +1391,7 @@ class ApplyModelPanel(ttk.LabelFrame):
 
         # Snapshot tkinter values on the main thread before starting worker thread.
         outpth = self.output_folder.get().strip()
+        csv_path = self.create_apply_dataset_csv(image_folder, outpth)
 
         def process():
             status_state = {"message": "Initializing model application..."}
@@ -1069,10 +1419,10 @@ class ApplyModelPanel(ttk.LabelFrame):
 
                 self.status_callback("Applying model to image set...", "processing", 60)
                 mainbody(False, csv_path, entries, outpth, None, progress_adapter)
+
                 self.status_callback("Model applied successfully!", "success", 100)
 
                 # TODO(stats): call your statistical analysis module here using model outputs.
-                # TODO(masked-output): if masking/intersection outputs are required, hook that module here.
                 messagebox.showinfo(
                     "Apply Complete",
                     f"Model application finished.\nResults saved to:\n{outpth}"
