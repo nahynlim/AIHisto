@@ -13,6 +13,7 @@ import time
 from datetime import datetime
 from typing import Optional, Callable
 import os
+import sys
 import shutil
 import subprocess
 from pathlib import Path
@@ -556,14 +557,22 @@ class SegmentationPanel(ttk.LabelFrame):
         windows_lnk = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\CellProfiler.lnk"
         if os.path.isfile(windows_lnk):
             return windows_lnk
+        mac_app = "/Applications/CellProfiler.app"
+        if os.path.isdir(mac_app):
+            return mac_app
         mac_cp = "/Applications/CellProfiler.app/Contents/MacOS/cp"
         if os.path.isfile(mac_cp):
             return mac_cp
         return "cellprofiler"
 
     def resolve_cp_executable(self, cp_exec):
-        """Resolve a Windows .lnk shortcut to its target executable when possible."""
+        """Resolve OS-specific CellProfiler launch targets when possible."""
         if not cp_exec:
+            return cp_exec
+        if sys.platform == "darwin" and cp_exec.lower().endswith(".app"):
+            inner_cp = os.path.join(cp_exec, "Contents", "MacOS", "cp")
+            if os.path.isfile(inner_cp):
+                return inner_cp
             return cp_exec
         if not cp_exec.lower().endswith(".lnk"):
             return cp_exec
@@ -588,7 +597,31 @@ class SegmentationPanel(ttk.LabelFrame):
         """Check whether the chosen CellProfiler executable is callable."""
         if not cp_exec:
             return False
+        if sys.platform == "darwin":
+            if cp_exec.lower().endswith(".app"):
+                return os.path.isdir(cp_exec)
+            if cp_exec in {"cellprofiler", "CellProfiler"} and shutil.which("open") is not None:
+                return True
         return os.path.isfile(cp_exec) or shutil.which(cp_exec) is not None
+
+    def build_cp_command(self, cp_exec, pipeline_path=None):
+        """Build a platform-appropriate CellProfiler command."""
+        if sys.platform == "darwin":
+            if cp_exec.lower().endswith(".app"):
+                cmd = ["open", cp_exec]
+                if pipeline_path:
+                    cmd.extend(["--args", "-p", pipeline_path])
+                return cmd
+            if cp_exec in {"cellprofiler", "CellProfiler"} and shutil.which(cp_exec) is None and shutil.which("open") is not None:
+                cmd = ["open", "-a", "CellProfiler"]
+                if pipeline_path:
+                    cmd.extend(["--args", "-p", pipeline_path])
+                return cmd
+
+        cmd = [cp_exec]
+        if pipeline_path:
+            cmd.extend(["-p", pipeline_path])
+        return cmd
 
     def resolve_preset_pipeline(self, filename):
         """Resolve preset pipeline filename from common repo-relative paths."""
@@ -655,12 +688,8 @@ class SegmentationPanel(ttk.LabelFrame):
             env.pop("PYTHONPATH", None)
             env.pop("PYTHONHOME", None)
 
-            if pipeline_path:
-                cmd = [cp_exec, "-p", pipeline_path]
-                run_msg = "Launching CellProfiler with selected pipeline..."
-            else:
-                cmd = [cp_exec]
-                run_msg = "Launching CellProfiler interactive app..."
+            cmd = self.build_cp_command(cp_exec, pipeline_path)
+            run_msg = "Launching CellProfiler with selected pipeline..." if pipeline_path else "Launching CellProfiler interactive app..."
             self.after(0, lambda: self.status_callback(run_msg, "processing", 40))
             try:
                 result = subprocess.run(cmd, env=env, capture_output=True, text=True)
@@ -854,10 +883,10 @@ class BuildModelPanel(ttk.LabelFrame):
         
         self.csv_upload = DragDropUploadField(
             left_frame,
-            "Image Set (CSV)",
-            "CSV file with image paths",
+            "CSV File Input",
+            "CSV file input",
             ".csv",
-            "Upload a CSV file containing paths to images for model building"
+            "Upload a CSV file with headers: set ID, condition, set location, tag, note."
         )
         self.csv_upload.pack(fill=tk.BOTH, expand=True)
         
@@ -866,11 +895,10 @@ class BuildModelPanel(ttk.LabelFrame):
         
         self.raw_upload = DragDropUploadField(
             right_frame,
-            "Raw Images (Optional)",
-            "Direct image upload",
+            "Image Folder",
+            "Image folder",
             "image/*",
-            "Alternatively, upload raw images directly instead of using a CSV file",
-            allow_multiple=True
+            "Optional image folder reference. The current build-model backend still runs from the CSV input."
         )
         self.raw_upload.pack(fill=tk.BOTH, expand=True)
         
@@ -980,10 +1008,10 @@ class BuildModelPanel(ttk.LabelFrame):
     
     def build_model(self):
         """Build model by running getboundary + mainbody pipeline."""
-        image_folder = self.image_folder_upload.get_file()
-        if not image_folder:
-            self.status_callback("Error: Please select an images folder", 'error', 0)
-            messagebox.showerror("Error", "Please select an images folder")
+        csv_path = self.csv_upload.get_file()
+        if not csv_path:
+            self.status_callback("Error: Please select a model-build CSV file", 'error', 0)
+            messagebox.showerror("Error", "Please select a model-build CSV file")
             return
 
         if not self.model_name.get().strip():
@@ -1151,6 +1179,28 @@ class ApplyModelPanel(ttk.LabelFrame):
             "Launch CellProfiler with the selected masking pipeline. Choose image, mask, and output folders inside CellProfiler."
         )
 
+        self.input_mode_frame = ttk.Frame(self)
+        self.input_mode_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(self.input_mode_frame, text="Apply Model Input Type", font=("Arial", 9, "bold")).pack(anchor=tk.W, pady=(0, 5))
+        self.apply_input_mode = tk.StringVar(value="CSV")
+        self.apply_input_mode_combo = ttk.Combobox(
+            self.input_mode_frame,
+            textvariable=self.apply_input_mode,
+            state="readonly",
+            values=["CSV", "Folder"]
+        )
+        self.apply_input_mode_combo.pack(fill=tk.X)
+        self.apply_input_mode_combo.bind("<<ComboboxSelected>>", lambda _event: self.toggle_apply_input_mode())
+
+        self.apply_csv_upload = DragDropUploadField(
+            self,
+            "Image Set (CSV)",
+            "CSV file with image paths",
+            ".csv",
+            "Upload a CSV file containing set ID, condition, set location, tag, and note columns."
+        )
+        self.apply_csv_upload.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
         self.image_folder_upload = DragDropUploadField(
             self,
             "Images Folder",
@@ -1159,6 +1209,7 @@ class ApplyModelPanel(ttk.LabelFrame):
             "Select the folder containing the images you want to analyze with the model."
         )
         self.image_folder_upload.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        self.toggle_apply_input_mode()
 
         self.model_upload_container = ttk.Frame(self)
         self.model_upload_container.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
@@ -1171,6 +1222,11 @@ class ApplyModelPanel(ttk.LabelFrame):
             "Upload a previously saved model file to apply to the images"
         )
         self.model_upload.pack(fill=tk.BOTH, expand=True)
+        self.input_mode_frame.pack_forget()
+        self.input_mode_frame.pack(fill=tk.X, pady=(0, 10), after=self.model_upload_container)
+        self.apply_csv_upload.pack_forget()
+        self.image_folder_upload.pack_forget()
+        self.toggle_apply_input_mode()
 
         # Output folder
         folder_frame = ttk.Frame(self)
@@ -1211,6 +1267,15 @@ class ApplyModelPanel(ttk.LabelFrame):
             self.mask_cp_executable.delete(0, tk.END)
             self.mask_cp_executable.insert(0, exe)
 
+    def toggle_apply_input_mode(self):
+        """Show either CSV input or folder input for apply-model workflow."""
+        if self.apply_input_mode.get() == "CSV":
+            self.image_folder_upload.pack_forget()
+            self.apply_csv_upload.pack(fill=tk.BOTH, expand=True, pady=(0, 10), after=self.input_mode_frame)
+        else:
+            self.apply_csv_upload.pack_forget()
+            self.image_folder_upload.pack(fill=tk.BOTH, expand=True, pady=(0, 10), after=self.input_mode_frame)
+
     def toggle_mask_pipeline_upload(self):
         """No-op placeholder now that custom mode simply opens CellProfiler."""
         return
@@ -1220,14 +1285,22 @@ class ApplyModelPanel(ttk.LabelFrame):
         windows_lnk = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\CellProfiler.lnk"
         if os.path.isfile(windows_lnk):
             return windows_lnk
+        mac_app = "/Applications/CellProfiler.app"
+        if os.path.isdir(mac_app):
+            return mac_app
         mac_cp = "/Applications/CellProfiler.app/Contents/MacOS/cp"
         if os.path.isfile(mac_cp):
             return mac_cp
         return "cellprofiler"
 
     def resolve_cp_executable(self, cp_exec):
-        """Resolve a Windows .lnk shortcut to its target executable when possible."""
+        """Resolve OS-specific CellProfiler launch targets when possible."""
         if not cp_exec:
+            return cp_exec
+        if sys.platform == "darwin" and cp_exec.lower().endswith(".app"):
+            inner_cp = os.path.join(cp_exec, "Contents", "MacOS", "cp")
+            if os.path.isfile(inner_cp):
+                return inner_cp
             return cp_exec
         if not cp_exec.lower().endswith(".lnk"):
             return cp_exec
@@ -1252,7 +1325,31 @@ class ApplyModelPanel(ttk.LabelFrame):
         """Check whether the chosen CellProfiler executable is callable."""
         if not cp_exec:
             return False
+        if sys.platform == "darwin":
+            if cp_exec.lower().endswith(".app"):
+                return os.path.isdir(cp_exec)
+            if cp_exec in {"cellprofiler", "CellProfiler"} and shutil.which("open") is not None:
+                return True
         return os.path.isfile(cp_exec) or shutil.which(cp_exec) is not None
+
+    def build_cp_command(self, cp_exec, pipeline_path=None):
+        """Build a platform-appropriate CellProfiler command."""
+        if sys.platform == "darwin":
+            if cp_exec.lower().endswith(".app"):
+                cmd = ["open", cp_exec]
+                if pipeline_path:
+                    cmd.extend(["--args", "-p", pipeline_path])
+                return cmd
+            if cp_exec in {"cellprofiler", "CellProfiler"} and shutil.which(cp_exec) is None and shutil.which("open") is not None:
+                cmd = ["open", "-a", "CellProfiler"]
+                if pipeline_path:
+                    cmd.extend(["--args", "-p", pipeline_path])
+                return cmd
+
+        cmd = [cp_exec]
+        if pipeline_path:
+            cmd.extend(["-p", pipeline_path])
+        return cmd
 
     def resolve_masking_pipeline_preset(self):
         """Resolve repo-local masking pipeline when present."""
@@ -1305,7 +1402,7 @@ class ApplyModelPanel(ttk.LabelFrame):
 
         def process():
             self.after(0, lambda: self.status_callback("Launching CellProfiler masking pipeline...", "processing", 20))
-            cmd = [cp_exec] if pipeline_path is None else [cp_exec, "-p", pipeline_path]
+            cmd = self.build_cp_command(cp_exec, pipeline_path)
             try:
                 subprocess.Popen(cmd)
             except Exception as exc:
@@ -1364,11 +1461,19 @@ class ApplyModelPanel(ttk.LabelFrame):
     
     def apply_model(self):
         """Apply model by running getboundary + mainbody pipeline."""
-        image_folder = self.image_folder_upload.get_file()
-        if not image_folder:
-            self.status_callback("Error: Please select an images folder", 'error', 0)
-            messagebox.showerror("Error", "Please select an images folder")
-            return
+        csv_path = None
+        if self.apply_input_mode.get() == "CSV":
+            csv_path = self.apply_csv_upload.get_file()
+            if not csv_path:
+                self.status_callback("Error: Please select an image set CSV file", 'error', 0)
+                messagebox.showerror("Error", "Please select an image set CSV file")
+                return
+        else:
+            image_folder = self.image_folder_upload.get_file()
+            if not image_folder:
+                self.status_callback("Error: Please select an images folder", 'error', 0)
+                messagebox.showerror("Error", "Please select an images folder")
+                return
 
         built_model = self.built_model_getter()
         if self.use_built_model_var.get():
@@ -1391,7 +1496,8 @@ class ApplyModelPanel(ttk.LabelFrame):
 
         # Snapshot tkinter values on the main thread before starting worker thread.
         outpth = self.output_folder.get().strip()
-        csv_path = self.create_apply_dataset_csv(image_folder, outpth)
+        if self.apply_input_mode.get() != "CSV":
+            csv_path = self.create_apply_dataset_csv(image_folder, outpth)
 
         def process():
             status_state = {"message": "Initializing model application..."}

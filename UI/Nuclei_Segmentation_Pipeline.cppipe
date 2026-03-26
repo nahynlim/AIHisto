@@ -2,7 +2,7 @@ CellProfiler Pipeline: http://www.cellprofiler.org
 Version:5
 DateRevision:428
 GitHash:
-ModuleCount:9
+ModuleCount:11
 HasImagePlaneDetails:False
 
 Images:[module_num:1|svn_version:'Unknown'|variable_revision_number:2|show_window:False|notes:['To begin creating your project, use the Images module to compile a list of files and/or folders that you want to analyze. You can also specify a set of rules to include only the desired files in your selected folders.']|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
@@ -53,43 +53,52 @@ Groups:[module_num:4|svn_version:'Unknown'|variable_revision_number:2|show_windo
     grouping metadata count:1
     Metadata category:None
 
-EnhanceOrSuppressFeatures:[module_num:5|svn_version:'Unknown'|variable_revision_number:7|show_window:True|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
+RescaleIntensity:[module_num:5|svn_version:'Unknown'|variable_revision_number:3|show_window:False|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
     Select the input image:DAPI
-    Name the output image:Suppressed
-    Select the operation:Suppress
-    Feature size:10
-    Feature type:Speckles
-    Range of hole sizes:1,10
-    Smoothing scale:2.0
-    Shear angle:0.0
-    Decay:0.95
-    Enhancement method:Tubeness
-    Speed and accuracy:Fast
-    Rescale result image:No
+    Name the output image:RescaleDapi
+    Rescaling method:Divide by the image's maximum
+    Method to calculate the minimum intensity:Custom
+    Method to calculate the maximum intensity:Custom
+    Lower intensity limit for the input image:0.0
+    Upper intensity limit for the input image:1.0
+    Intensity range for the input image:0.0,1.0
+    Intensity range for the output image:0.0,1.0
+    Select image to match in maximum intensity:None
+    Divisor value:1.0
+    Divisor measurement:None
 
-IdentifyPrimaryObjects:[module_num:6|svn_version:'Unknown'|variable_revision_number:15|show_window:True|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
-    Select the input image:Suppressed
+Smooth:[module_num:6|svn_version:'Unknown'|variable_revision_number:2|show_window:False|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
+    Select the input image:RescaleDapi
+    Name the output image:SmoothDapi
+    Select smoothing method:Circular Average Filter
+    Calculate artifact diameter automatically?:No
+    Typical artifact diameter:3
+    Edge intensity difference:0.1
+    Clip intensities to 0 and 1?:Yes
+
+IdentifyPrimaryObjects:[module_num:7|svn_version:'Unknown'|variable_revision_number:15|show_window:False|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
+    Select the input image:SmoothDapi
     Name the primary objects to be identified:Nuclei
-    Typical diameter of objects, in pixel units (Min,Max):10,40
+    Typical diameter of objects, in pixel units (Min,Max):10,50
     Discard objects outside the diameter range?:Yes
     Discard objects touching the border of the image?:Yes
     Method to distinguish clumped objects:Shape
     Method to draw dividing lines between clumped objects:Shape
-    Size of smoothing filter:10
-    Suppress local maxima that are closer than this minimum allowed distance:7.0
+    Size of smoothing filter:3
+    Suppress local maxima that are closer than this minimum allowed distance:15
     Speed up by using lower-resolution image to find local maxima?:Yes
     Fill holes in identified objects?:After declumping only
-    Automatically calculate size of smoothing filter for declumping?:Yes
-    Automatically calculate minimum allowed distance between local maxima?:Yes
+    Automatically calculate size of smoothing filter for declumping?:No
+    Automatically calculate minimum allowed distance between local maxima?:No
     Handling of objects if excessive number of objects identified:Continue
     Maximum number of objects:500
     Use advanced settings?:Yes
     Threshold setting version:12
     Threshold strategy:Global
     Thresholding method:Otsu
-    Threshold smoothing scale:2
-    Threshold correction factor:1.0
-    Lower and upper bounds on threshold:0.0,1.0
+    Threshold smoothing scale:1.8
+    Threshold correction factor:1.3
+    Lower and upper bounds on threshold:0.2,1.0
     Manual threshold:0.0
     Select the measurement to threshold with:None
     Two-class or three-class thresholding?:Three classes
@@ -103,28 +112,52 @@ IdentifyPrimaryObjects:[module_num:6|svn_version:'Unknown'|variable_revision_num
     # of deviations:2.0
     Thresholding method:Otsu
 
-ConvertObjectsToImage:[module_num:7|svn_version:'Unknown'|variable_revision_number:1|show_window:True|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
+ConvertObjectsToImage:[module_num:8|svn_version:'Unknown'|variable_revision_number:1|show_window:False|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
     Select the input objects:Nuclei
-    Name the output image:NucleiLabels
-    Select the color format:Color
+    Name the output image:SegmentedNuclei
+    Select the color format:Binary (black & white)
     Select the colormap:Default
 
-MeasureObjectSizeShape:[module_num:8|svn_version:'Unknown'|variable_revision_number:3|show_window:True|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
+MeasureObjectSizeShape:[module_num:9|svn_version:'Unknown'|variable_revision_number:3|show_window:False|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
     Select object sets to measure:Nuclei
     Calculate the Zernike features?:No
     Calculate the advanced features?:No
 
-SaveImages:[module_num:9|svn_version:'Unknown'|variable_revision_number:16|show_window:True|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
+ExportToSpreadsheet:[module_num:10|svn_version:'Unknown'|variable_revision_number:13|show_window:False|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
+    Select the column delimiter:Comma (",")
+    Add image metadata columns to your object data file?:No
+    Add image file and folder names to your object data file?:Yes
+    Select the measurements to export:Yes
+    Calculate the per-image mean values for object measurements?:No
+    Calculate the per-image median values for object measurements?:No
+    Calculate the per-image standard deviation values for object measurements?:No
+    Output file location:Elsewhere...|/Users/oha-eun/Desktop/Senior Design/FREEDMAN LAB
+    Create a GenePattern GCT file?:No
+    Select source of sample row name:Metadata
+    Select the image to use as the identifier:None
+    Select the metadata to use as the identifier:None
+    Export all measurement types?:Yes
+    Press button to select measurements:Nuclei|AreaShape_Extent,Nuclei|AreaShape_MeanRadius,Nuclei|AreaShape_BoundingBoxMaximum_Y,Nuclei|AreaShape_BoundingBoxMaximum_X,Nuclei|AreaShape_Orientation,Nuclei|AreaShape_BoundingBoxArea,Nuclei|AreaShape_MaxFeretDiameter,Nuclei|AreaShape_Compactness,Nuclei|AreaShape_BoundingBoxMinimum_Y,Nuclei|AreaShape_BoundingBoxMinimum_X,Nuclei|AreaShape_ConvexArea,Nuclei|AreaShape_FormFactor,Nuclei|AreaShape_Solidity,Nuclei|AreaShape_MaximumRadius,Nuclei|AreaShape_MinFeretDiameter,Nuclei|AreaShape_Eccentricity,Nuclei|AreaShape_EquivalentDiameter,Nuclei|AreaShape_Center_Y,Nuclei|AreaShape_Center_X,Nuclei|AreaShape_MinorAxisLength,Nuclei|AreaShape_Perimeter,Nuclei|AreaShape_EulerNumber,Nuclei|AreaShape_MajorAxisLength,Nuclei|AreaShape_MedianRadius,Nuclei|AreaShape_Area,Nuclei|Number_Object_Number,Nuclei|Location_Center_Y,Nuclei|Location_Center_X,Nuclei|Location_Center_Z,Image|Count_Nuclei,Image|Threshold_OrigThreshold_Nuclei,Image|Threshold_WeightedVariance_Nuclei,Image|Threshold_SumOfEntropies_Nuclei,Image|Threshold_FinalThreshold_Nuclei
+    Representation of Nan/Inf:NaN
+    Add a prefix to file names?:Yes
+    Filename prefix:Segmented_
+    Overwrite existing files without warning?:Yes
+    Data to export:Do not use
+    Combine these object measurements with those of the previous object?:No
+    File name:DATA.csv
+    Use the object name for the file name?:Yes
+
+SaveImages:[module_num:11|svn_version:'Unknown'|variable_revision_number:16|show_window:False|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
     Select the type of image to save:Image
-    Select the image to save:NucleiLabels
+    Select the image to save:SegmentedNuclei
     Select method for constructing file names:From image filename
     Select image name for file prefix:DAPI
     Enter single file name:OrigBlue
     Number of digits:4
     Append a suffix to the image file name?:Yes
-    Text to append to the image name:_NucleiLabels
+    Text to append to the image name:_Segmented
     Saved file format:tiff
-    Output file location:Elsewhere...|
+    Output file location:Elsewhere...|/Users/oha-eun/Desktop/Senior Design/FREEDMAN LAB/Post Processing Images/Max Projection
     Image bit depth:16-bit integer
     Overwrite existing files without warning?:Yes
     When to save:Every cycle
@@ -132,4 +165,4 @@ SaveImages:[module_num:9|svn_version:'Unknown'|variable_revision_number:16|show_
     Create subfolders in the output folder?:No
     Base image folder:Elsewhere...|
     How to save the series:T (Time)
-    Save with lossless compression?:Yes
+    Save with lossless compression?:No
