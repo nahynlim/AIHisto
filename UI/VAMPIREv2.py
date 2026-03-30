@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from PIL import Image
+from matlab_mask_runner import run_matlab_mask_job
 from mainbody import mainbody
 from getboundary import getboundary
 
@@ -728,7 +729,15 @@ class MaskingPanel(ttk.LabelFrame):
     def __init__(self, parent, status_callback):
         super().__init__(parent, text="🎭 Masking - SHG damage region mask creation and application", padding=15)
         self.status_callback = status_callback
-        
+        self.roi_mode = tk.StringVar(value="auto")
+        self.rotation_mode = tk.StringVar(value="none")
+        self.enhance_var = tk.BooleanVar(value=False)
+        self.create_mask_var = tk.BooleanVar(value=True)
+        self.save_figures_var = tk.BooleanVar(value=True)
+        self.save_unknown_mask_var = tk.BooleanVar(value=False)
+        self.overwrite_var = tk.BooleanVar(value=True)
+        self.mask_output_type = tk.StringVar(value="all")
+
         # Upload folders - side by side
         upload_frame = ttk.Frame(self)
         upload_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
@@ -738,54 +747,107 @@ class MaskingPanel(ttk.LabelFrame):
         
         self.shg_upload = DragDropUploadField(
             left_frame,
-            "SHG Images Folder",
-            "SHG images for mask creation",
+            "SHG Images",
+            "SHG image files",
             "image/*",
-            "SHG images will be processed to create binary masks identifying damage regions",
-            icon='folder'
+            "Select one or more SHG image files. The MATLAB runner uses files ending in _0000.tif.",
+            icon='folder',
+            allow_multiple=True
         )
         self.shg_upload.pack(fill=tk.BOTH, expand=True)
         
         right_frame = ttk.Frame(upload_frame)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
-        
-        self.segmented_upload = DragDropUploadField(
+
+        self.output_upload = DragDropUploadField(
             right_frame,
-            "Segmented Images Folder",
-            "Segmented images to apply mask",
-            "image/*",
-            "Segmented images to which the SHG-derived mask will be applied",
+            "Mask Output Folder",
+            "Folder to save masks and reports",
+            "folder",
+            "Folder where MATLAB should save masks, figures, and stats output.",
             icon='folder'
         )
-        self.segmented_upload.pack(fill=tk.BOTH, expand=True)
-        
-        # Mask options
-        mask_options_frame = tk.Frame(self, bg="#f0f0f0", relief=tk.RIDGE, bd=2)
-        mask_options_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        tk.Label(mask_options_frame, text="Mask Application Mode", 
+        self.output_upload.pack(fill=tk.BOTH, expand=True)
+
+        params_frame = tk.Frame(self, bg="#f0f0f0", relief=tk.RIDGE, bd=2)
+        params_frame.pack(fill=tk.X, pady=(0, 10))
+
+        tk.Label(params_frame, text="MATLAB Masking Parameters",
                 bg="#f0f0f0", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=10, pady=5)
-        
-        options_content = ttk.Frame(mask_options_frame)
-        options_content.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        self.mask_mode = tk.StringVar(value="none")
-        
-        # Radio buttons for mask mode
-        none_radio = ttk.Radiobutton(options_content, text="No Mask", 
-                                     variable=self.mask_mode, value="none")
-        none_radio.pack(anchor=tk.W, padx=20, pady=2)
-        ToolTip(none_radio, "Output segmented images without any masking")
-        
-        damaged_radio = ttk.Radiobutton(options_content, text="Mask (Damaged Regions Only)", 
-                                       variable=self.mask_mode, value="mask")
-        damaged_radio.pack(anchor=tk.W, padx=20, pady=2)
-        ToolTip(damaged_radio, "Apply mask to show only damaged regions identified by SHG")
-        
-        undamaged_radio = ttk.Radiobutton(options_content, text="Inverse Mask (Undamaged Regions Only)", 
-                                         variable=self.mask_mode, value="inverse")
-        undamaged_radio.pack(anchor=tk.W, padx=20, pady=2)
-        ToolTip(undamaged_radio, "Apply inverse mask to show only undamaged regions")
+
+        params_content = ttk.Frame(params_frame)
+        params_content.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        bundle_row = ttk.Frame(params_content)
+        bundle_row.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(bundle_row, text="Bundle Width", width=18).pack(side=tk.LEFT)
+        self.bundle_width = ttk.Entry(bundle_row, width=10)
+        self.bundle_width.insert(0, "15")
+        self.bundle_width.pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Label(bundle_row, text="Bundle Height", width=18).pack(side=tk.LEFT)
+        self.bundle_height = ttk.Entry(bundle_row, width=10)
+        self.bundle_height.insert(0, "15")
+        self.bundle_height.pack(side=tk.LEFT)
+
+        percentile_row = ttk.Frame(params_content)
+        percentile_row.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(percentile_row, text="Low SHG Percentile", width=18).pack(side=tk.LEFT)
+        self.low_shg_percentile = ttk.Entry(percentile_row, width=10)
+        self.low_shg_percentile.insert(0, "10")
+        self.low_shg_percentile.pack(side=tk.LEFT)
+
+        mask_type_row = ttk.Frame(params_content)
+        mask_type_row.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(mask_type_row, text="Mask Output Type", width=18).pack(side=tk.LEFT)
+        self.mask_output_combo = ttk.Combobox(
+            mask_type_row,
+            textvariable=self.mask_output_type,
+            state="readonly",
+            values=["all", "damaged", "undamaged", "low_shg", "high_shg"],
+            width=18
+        )
+        self.mask_output_combo.pack(side=tk.LEFT)
+
+        roi_row = ttk.Frame(params_content)
+        roi_row.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(roi_row, text="ROI Mode", width=18).pack(side=tk.LEFT)
+        self.roi_mode_combo = ttk.Combobox(
+            roi_row,
+            textvariable=self.roi_mode,
+            state="readonly",
+            values=["auto", "draw", "none"],
+            width=18
+        )
+        self.roi_mode_combo.pack(side=tk.LEFT)
+
+        rotation_row = ttk.Frame(params_content)
+        rotation_row.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(rotation_row, text="Rotation Mode", width=18).pack(side=tk.LEFT)
+        self.rotation_mode_combo = ttk.Combobox(
+            rotation_row,
+            textvariable=self.rotation_mode,
+            state="readonly",
+            values=["none", "vertical", "horizontal", "user"],
+            width=18
+        )
+        self.rotation_mode_combo.pack(side=tk.LEFT, padx=(0, 10))
+        self.rotation_mode_combo.bind("<<ComboboxSelected>>", lambda _event: self.toggle_user_angle())
+        ttk.Label(rotation_row, text="User Angle", width=12).pack(side=tk.LEFT)
+        self.user_angle = ttk.Entry(rotation_row, width=10)
+        self.user_angle.insert(0, "0")
+        self.user_angle.pack(side=tk.LEFT)
+
+        checks_row_one = ttk.Frame(params_content)
+        checks_row_one.pack(fill=tk.X, pady=(0, 6))
+        ttk.Checkbutton(checks_row_one, text="Enhance Images", variable=self.enhance_var).pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Checkbutton(checks_row_one, text="Create Masks", variable=self.create_mask_var).pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Checkbutton(checks_row_one, text="Save Figures", variable=self.save_figures_var).pack(side=tk.LEFT)
+
+        checks_row_two = ttk.Frame(params_content)
+        checks_row_two.pack(fill=tk.X)
+        ttk.Checkbutton(checks_row_two, text="Save Unknown Mask", variable=self.save_unknown_mask_var).pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Checkbutton(checks_row_two, text="Overwrite Existing Files", variable=self.overwrite_var).pack(side=tk.LEFT)
+        self.toggle_user_angle()
         
         # Output directory
         output_frame = ttk.Frame(self)
@@ -811,7 +873,8 @@ class MaskingPanel(ttk.LabelFrame):
         # Create masks button
         create_btn = ttk.Button(self, text="▶ Create Masks", command=self.create_masks)
         create_btn.pack(fill=tk.X)
-        ToolTip(create_btn, "Process SHG images to create masks and apply to segmented images")
+        ToolTip(create_btn, "Process SHG images with the MATLAB masking runner")
+        output_frame.pack_forget()
     
     def browse_output(self):
         """Browse for output folder"""
@@ -819,50 +882,88 @@ class MaskingPanel(ttk.LabelFrame):
         if folder:
             self.output_path.delete(0, tk.END)
             self.output_path.insert(0, folder)
+
+    def toggle_user_angle(self):
+        """Enable user angle only when custom rotation is selected."""
+        if self.rotation_mode.get() == "user":
+            self.user_angle.configure(state="normal")
+        else:
+            self.user_angle.configure(state="normal")
+            self.user_angle.delete(0, tk.END)
+            self.user_angle.insert(0, "0")
+            self.user_angle.configure(state="disabled")
     
     def create_masks(self):
-        """Create and apply SHG-based masks"""
+        """Create SHG-based masks by calling the MATLAB runner."""
         if not self.shg_upload.get_file():
             self.status_callback("Error: Please select SHG images folder", 'error', 0)
             messagebox.showerror("Error", "Please select SHG images folder")
             return
-        
-        if not self.segmented_upload.get_file():
-            self.status_callback("Error: Please select segmented images folder", 'error', 0)
-            messagebox.showerror("Error", "Please select segmented images folder")
+
+        if not self.output_upload.get_file():
+            self.status_callback("Error: Please select a mask output folder", 'error', 0)
+            messagebox.showerror("Error", "Please select a mask output folder")
             return
-        
+
+        try:
+            bundle_width = float(self.bundle_width.get().strip() or "15")
+            bundle_height = float(self.bundle_height.get().strip() or "15")
+            low_shg_percentile = float(self.low_shg_percentile.get().strip() or "10")
+            user_angle = float(self.user_angle.get().strip() or "0")
+        except ValueError:
+            self.status_callback("Error: Numeric masking parameters are invalid", 'error', 0)
+            messagebox.showerror("Error", "Bundle size, percentile, and angle must be valid numbers.")
+            return
+
+        if self.roi_mode.get() == "draw":
+            self.status_callback("Error: ROI draw mode is not yet wired into the GUI", 'error', 0)
+            messagebox.showerror(
+                "ROI Draw Not Ready",
+                "ROI draw mode still needs GUI polygon capture. Use 'auto' or 'none' for now."
+            )
+            return
+
+        shg_input = self.shg_upload.get_file()
+        out_dir = self.output_upload.get_file()
+        roi_mode = self.roi_mode.get()
+        rot_mode = self.rotation_mode.get()
+        do_enhance = self.enhance_var.get()
+        do_mask = self.create_mask_var.get()
+        save_figures = self.save_figures_var.get()
+        save_unknown_mask = self.save_unknown_mask_var.get()
+        overwrite_flag = self.overwrite_var.get()
+        mask_output_type = self.mask_output_type.get()
+
         def process():
-            # TODO(masking): Replace this simulated flow with your external masking module call.
-            # TODO(intersection): Compute segmentation-mask intersection here
-            # (e.g., segmented * mask, or segmented * (1 - mask) for inverse mode)
-            # before saving outputs to self.output_path.get().
-            # TODO(masking-save): save mask and intersection outputs to self.output_path.get()
-            mask_mode_text = {
-                'none': 'no masking',
-                'mask': 'damaged region masking',
-                'inverse': 'undamaged region masking'
-            }
-            mode_desc = mask_mode_text.get(self.mask_mode.get(), 'masking')
-            
-            steps = [
-                (20, 'Loading SHG images...'),
-                (40, 'Creating binary masks from SHG data...'),
-                (60, 'Loading segmented images...'),
-                (80, f'Applying {mode_desc}...'),
-                (100, 'Mask creation and application completed!')
-            ]
-            
-            for progress, message in steps:
-                time.sleep(0.7)
-                self.status_callback(message, 'processing', progress)
-            
-            time.sleep(0.5)
-            self.status_callback(f'Masking completed with {mode_desc}!', 'success', 100)
-            self.after(0, lambda: messagebox.showinfo(
-                "Masking Complete",
-                f"Masking mode: {mode_desc}\nOutput saved to:\n{self.output_path.get()}"
-            ))
+            try:
+                run_matlab_mask_job(
+                    shg_input,
+                    out_dir,
+                    bundle_width=bundle_width,
+                    bundle_height=bundle_height,
+                    do_enhance=do_enhance,
+                    do_mask=do_mask,
+                    save_figure=save_figures,
+                    roi_mode=roi_mode,
+                    mask_verts=None,
+                    low_shg_percentile=low_shg_percentile,
+                    rot_mode=rot_mode,
+                    user_angle=user_angle,
+                    mask_types=mask_output_type,
+                    save_unknown_mask=save_unknown_mask,
+                    overwrite_flag=overwrite_flag,
+                    status_callback=lambda msg, kind, prog: self.after(
+                        0, lambda m=msg, k=kind, p=prog: self.status_callback(m, k, p)
+                    ),
+                )
+                self.after(0, lambda: messagebox.showinfo(
+                    "Masking Complete",
+                    f"MATLAB masking finished.\nOutput saved to:\n{out_dir}"
+                ))
+            except Exception as exc:
+                err_msg = f"Error during MATLAB masking: {exc}"
+                self.after(0, lambda: self.status_callback(err_msg, "error", 0))
+                self.after(0, lambda: messagebox.showerror("Masking Failed", err_msg))
         
         threading.Thread(target=process, daemon=True).start()
 
