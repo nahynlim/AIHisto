@@ -64,7 +64,6 @@ def run_matlab_mask_job(
     rot_mode: str = "none",
     user_angle: float = 0.0,
     mask_types: str = "all",
-    save_unknown_mask: bool = False,
     overwrite_flag: bool = True,
     matlab_function_name: str = "run_FFT_align_msk_v3_autoROI_from_python",
     status_callback: Optional[Callable[[str, str, int], None]] = None,
@@ -136,7 +135,6 @@ def run_matlab_mask_job(
             "save_stats", True,
             "save_roi", True,
             "save_figures", bool(save_figure),
-            "save_unknown_mask", bool(save_unknown_mask),
             "overwrite", bool(overwrite_flag),
         ])
 

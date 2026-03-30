@@ -734,7 +734,6 @@ class MaskingPanel(ttk.LabelFrame):
         self.enhance_var = tk.BooleanVar(value=False)
         self.create_mask_var = tk.BooleanVar(value=True)
         self.save_figures_var = tk.BooleanVar(value=True)
-        self.save_unknown_mask_var = tk.BooleanVar(value=False)
         self.overwrite_var = tk.BooleanVar(value=True)
         self.mask_output_type = tk.StringVar(value="all")
 
@@ -845,7 +844,6 @@ class MaskingPanel(ttk.LabelFrame):
 
         checks_row_two = ttk.Frame(params_content)
         checks_row_two.pack(fill=tk.X)
-        ttk.Checkbutton(checks_row_two, text="Save Unknown Mask", variable=self.save_unknown_mask_var).pack(side=tk.LEFT, padx=(0, 12))
         ttk.Checkbutton(checks_row_two, text="Overwrite Existing Files", variable=self.overwrite_var).pack(side=tk.LEFT)
         self.toggle_user_angle()
         
@@ -930,7 +928,6 @@ class MaskingPanel(ttk.LabelFrame):
         do_enhance = self.enhance_var.get()
         do_mask = self.create_mask_var.get()
         save_figures = self.save_figures_var.get()
-        save_unknown_mask = self.save_unknown_mask_var.get()
         overwrite_flag = self.overwrite_var.get()
         mask_output_type = self.mask_output_type.get()
 
@@ -950,7 +947,6 @@ class MaskingPanel(ttk.LabelFrame):
                     rot_mode=rot_mode,
                     user_angle=user_angle,
                     mask_types=mask_output_type,
-                    save_unknown_mask=save_unknown_mask,
                     overwrite_flag=overwrite_flag,
                     status_callback=lambda msg, kind, prog: self.after(
                         0, lambda m=msg, k=kind, p=prog: self.status_callback(m, k, p)
