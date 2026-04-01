@@ -16,6 +16,7 @@ import os
 import sys
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -95,6 +96,78 @@ def iter_image_files(folder, tag=None):
             continue
         image_paths.append(path)
     return image_paths
+
+
+def collect_image_paths(image_input):
+    """Return supported image paths from a folder path or selected file list."""
+    if not image_input:
+        return []
+
+    if isinstance(image_input, (list, tuple)):
+        image_paths = []
+        for item in image_input:
+            path = Path(item)
+            if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS:
+                image_paths.append(path)
+        return sorted(image_paths)
+
+    path = Path(image_input)
+    if path.is_dir():
+        return iter_image_files(path)
+    if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS:
+        return [path]
+    return []
+
+
+def configure_cellprofiler_pipeline(pipeline_path, output_dir, export_mode):
+    """Create a temporary pipeline copy with run-specific output settings."""
+    pipeline_path = Path(pipeline_path)
+    if pipeline_path.suffix.lower() != ".cppipe":
+        return str(pipeline_path)
+
+    export_flags = {
+        "Both": (True, True),
+        "Images Only": (True, False),
+        "Spreadsheet Only": (False, True),
+    }
+    save_images, save_spreadsheet = export_flags.get(export_mode, (True, True))
+    output_dir = str(Path(output_dir).resolve()).replace("\\", "/")
+
+    lines = pipeline_path.read_text(encoding="utf-8").splitlines()
+    updated_lines = []
+    current_module = None
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("ExportToSpreadsheet:["):
+            current_module = "ExportToSpreadsheet"
+            line = line.replace("|enabled:True|", f"|enabled:{'True' if save_spreadsheet else 'False'}|")
+        elif stripped.startswith("SaveImages:["):
+            current_module = "SaveImages"
+            line = line.replace("|enabled:True|", f"|enabled:{'True' if save_images else 'False'}|")
+        elif stripped.endswith(":[module_num:1|svn_version:'Unknown'|variable_revision_number:2|show_window:False|notes:['To begin creating your project, use the Images module to compile a list of files and/or folders that you want to analyze. You can also specify a set of rules to include only the desired files in your selected folders.']|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]"):
+            current_module = "Images"
+        elif stripped and not line.startswith(" ") and not line.startswith("\t"):
+            current_module = None
+
+        if current_module in {"ExportToSpreadsheet", "SaveImages"} and stripped.startswith("Output file location:"):
+            line = f"    Output file location:Elsewhere...|{output_dir}"
+
+        updated_lines.append(line)
+
+    temp_file = tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".cppipe",
+        prefix="segmentation_run_",
+        delete=False,
+        encoding="utf-8",
+        dir=output_dir,
+    )
+    try:
+        temp_file.write("\n".join(updated_lines) + "\n")
+    finally:
+        temp_file.close()
+    return temp_file.name
 
 
 def normalize_mask_key(stem):
@@ -490,9 +563,48 @@ class SegmentationPanel(ttk.LabelFrame):
             "Normal Staining": "Nuclei_Segmentation_Pipeline.cppipe",
         }
         self.launch_option = "Launch CellProfiler (Interactive)"
+        self.segmentation_run_mode = tk.StringVar(value="Run Headless")
+        self.segmentation_export_mode = tk.StringVar(value="Both")
 
-        # Raw images folder upload
-        # Raw images are now selected inside CellProfiler (interactive mode).
+        input_frame = ttk.Frame(self)
+        input_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        left_frame = ttk.Frame(input_frame)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        self.segmentation_input_upload = DragDropUploadField(
+            left_frame,
+            "Images",
+            "Image files",
+            "image/*",
+            "Choose one or more image files. CellProfiler will use their source folder as the input directory.",
+            icon='folder',
+            allow_multiple=True
+        )
+        self.segmentation_input_upload.pack(fill=tk.BOTH, expand=True)
+
+        run_mode_frame = ttk.Frame(self)
+        run_mode_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(run_mode_frame, text="Run Mode", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
+        self.segmentation_run_mode_combo = ttk.Combobox(
+            run_mode_frame,
+            textvariable=self.segmentation_run_mode,
+            state="readonly",
+            values=["Run Headless", "Open CellProfiler"],
+            width=24
+        )
+        self.segmentation_run_mode_combo.pack(side=tk.RIGHT)
+
+        export_mode_frame = ttk.Frame(self)
+        export_mode_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(export_mode_frame, text="Export Mode", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
+        self.segmentation_export_mode_combo = ttk.Combobox(
+            export_mode_frame,
+            textvariable=self.segmentation_export_mode,
+            state="readonly",
+            values=["Both", "Images Only", "Spreadsheet Only"],
+            width=24
+        )
+        self.segmentation_export_mode_combo.pack(side=tk.RIGHT)
 
         # Pipeline selection
         pipeline_frame = ttk.Frame(self)
@@ -540,10 +652,28 @@ class SegmentationPanel(ttk.LabelFrame):
         self.cp_executable.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         ttk.Button(cp_input_frame, text="...", width=3, command=self.browse_cp_executable).pack(side=tk.RIGHT)
 
-        # Open CellProfiler button
-        segment_btn = ttk.Button(self, text="Open CellProfiler", command=self.start_segmentation)
+        output_frame = ttk.Frame(self)
+        output_frame.pack(fill=tk.X, pady=(0, 10))
+
+        output_label_frame = ttk.Frame(output_frame)
+        output_label_frame.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(output_label_frame, text="Segmented Output Folder", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
+        output_help_btn = ttk.Label(output_label_frame, text=" i", cursor="hand2")
+        output_help_btn.pack(side=tk.LEFT)
+        ToolTip(output_help_btn, "Choose where CellProfiler should write segmented images and exported results.")
+
+        output_input_frame = ttk.Frame(output_frame)
+        output_input_frame.pack(fill=tk.X)
+        self.segmentation_output_path = ttk.Entry(output_input_frame)
+        self.segmentation_output_path.insert(0, "./results/segmentation")
+        self.segmentation_output_path.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        ttk.Button(output_input_frame, text="Browse", width=10,
+                  command=self.browse_segmentation_output).pack(side=tk.RIGHT)
+
+        # Segmentation button
+        segment_btn = ttk.Button(self, text="Start Segmentation", command=self.start_segmentation)
         segment_btn.pack(fill=tk.X)
-        ToolTip(segment_btn, "Open CellProfiler with the selected pipeline")
+        ToolTip(segment_btn, "Run the selected CellProfiler pipeline headlessly or open CellProfiler interactively")
 
         # No custom pipeline upload option.
     def browse_cp_executable(self):
@@ -552,6 +682,13 @@ class SegmentationPanel(ttk.LabelFrame):
         if exe:
             self.cp_executable.delete(0, tk.END)
             self.cp_executable.insert(0, exe)
+
+    def browse_segmentation_output(self):
+        """Browse for segmentation output folder"""
+        folder = filedialog.askdirectory()
+        if folder:
+            self.segmentation_output_path.delete(0, tk.END)
+            self.segmentation_output_path.insert(0, folder)
 
     def get_default_cp_executable(self):
         """Best-effort default CellProfiler executable path."""
@@ -605,8 +742,18 @@ class SegmentationPanel(ttk.LabelFrame):
                 return True
         return os.path.isfile(cp_exec) or shutil.which(cp_exec) is not None
 
-    def build_cp_command(self, cp_exec, pipeline_path=None):
+    def build_cp_command(self, cp_exec, pipeline_path=None, *, run_headless=False, input_dir=None, output_dir=None):
         """Build a platform-appropriate CellProfiler command."""
+        if run_headless:
+            cmd = [cp_exec, "-c", "-r"]
+            if pipeline_path:
+                cmd.extend(["-p", pipeline_path])
+            if input_dir:
+                cmd.extend(["-i", input_dir])
+            if output_dir:
+                cmd.extend(["-o", output_dir])
+            return cmd
+
         if sys.platform == "darwin":
             if cp_exec.lower().endswith(".app"):
                 cmd = ["open", cp_exec]
@@ -652,6 +799,11 @@ class SegmentationPanel(ttk.LabelFrame):
         cp_exec = self.resolve_cp_executable(cp_exec)
         pipeline_choice = self.pipeline_choice.get()
         pipeline_path = self.resolve_pipeline_path()
+        run_mode = self.segmentation_run_mode.get()
+        run_headless = run_mode == "Run Headless"
+        image_input = self.segmentation_input_upload.get_file()
+        output_dir = self.segmentation_output_path.get().strip()
+        export_mode = self.segmentation_export_mode.get()
 
         if not self.cp_executable_exists(cp_exec):
             self.status_callback("Error: CellProfiler executable not found", "error", 0)
@@ -666,20 +818,80 @@ class SegmentationPanel(ttk.LabelFrame):
 
         if pipeline_choice != self.launch_option:
             if not pipeline_path:
-                self.status_callback("Error: Please select a valid .cpproj/.cppipe pipeline", 'error', 0)
+                self.status_callback("Error: Please select a valid .cpproj/.cppipe pipeline", "error", 0)
                 messagebox.showerror(
                     "Error",
-                    "Pipeline not found. Keep pipeline files in project root or ./pipelines, "
-                    "or choose 'Upload Your Own'."
+                    "Pipeline not found. Keep pipeline files in project root or ./pipelines."
                 )
                 return
             if not os.path.isfile(pipeline_path):
-                self.status_callback("Error: Pipeline file not found", 'error', 0)
+                self.status_callback("Error: Pipeline file not found", "error", 0)
                 messagebox.showerror("Error", f"Pipeline file not found:\n{pipeline_path}")
                 return
             if Path(pipeline_path).suffix.lower() not in self.valid_pipeline_ext:
-                self.status_callback("Error: Pipeline must be .cpproj or .cppipe", 'error', 0)
+                self.status_callback("Error: Pipeline must be .cpproj or .cppipe", "error", 0)
                 messagebox.showerror("Error", "Pipeline must be a .cpproj or .cppipe file")
+                return
+
+        if not image_input:
+            self.status_callback("Error: Please select images", "error", 0)
+            messagebox.showerror("Error", "Please select images for segmentation.")
+            return
+
+        image_paths = collect_image_paths(image_input)
+        if not image_paths:
+            self.status_callback("Error: No supported images found", "error", 0)
+            messagebox.showerror(
+                "No Images Found",
+                "No supported image files were found in the selected input.\n\n"
+                "Supported types: .tif, .tiff, .jpg, .jpeg, .png, .bmp, .gif"
+            )
+            return
+
+        input_dirs = {str(path.parent) for path in image_paths}
+        if len(input_dirs) != 1:
+            self.status_callback("Error: Images must come from one folder", "error", 0)
+            messagebox.showerror(
+                "Multiple Folders Selected",
+                "CellProfiler headless runs need all selected images to come from the same folder."
+            )
+            return
+        input_dir = next(iter(input_dirs))
+
+        if not output_dir:
+            self.status_callback("Error: Please select an output folder", "error", 0)
+            messagebox.showerror("Error", "Please select an output folder for segmentation.")
+            return
+
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except OSError as exc:
+            self.status_callback("Error: Could not create output folder", "error", 0)
+            messagebox.showerror("Error", f"Could not create output folder:\n{output_dir}\n\n{exc}")
+            return
+
+        if run_headless and pipeline_choice == self.launch_option:
+            self.status_callback("Error: Headless mode requires a pipeline", "error", 0)
+            messagebox.showerror(
+                "Pipeline Required",
+                "Choose a segmentation pipeline before running CellProfiler headlessly."
+            )
+            return
+
+        configured_pipeline_path = pipeline_path
+        if pipeline_path:
+            try:
+                configured_pipeline_path = configure_cellprofiler_pipeline(
+                    pipeline_path,
+                    output_dir,
+                    export_mode
+                )
+            except Exception as exc:
+                self.status_callback("Error: Could not configure pipeline outputs", "error", 0)
+                messagebox.showerror(
+                    "Pipeline Configuration Failed",
+                    f"Could not prepare the CellProfiler pipeline for this run.\n\n{exc}"
+                )
                 return
 
         def process():
@@ -689,11 +901,21 @@ class SegmentationPanel(ttk.LabelFrame):
             env.pop("PYTHONPATH", None)
             env.pop("PYTHONHOME", None)
 
-            cmd = self.build_cp_command(cp_exec, pipeline_path)
-            run_msg = "Launching CellProfiler with selected pipeline..." if pipeline_path else "Launching CellProfiler interactive app..."
+            cmd = self.build_cp_command(
+                cp_exec,
+                configured_pipeline_path,
+                run_headless=run_headless,
+                input_dir=input_dir,
+                output_dir=output_dir
+            )
+            run_msg = "Running CellProfiler headlessly..." if run_headless else "Launching CellProfiler interactively..."
             self.after(0, lambda: self.status_callback(run_msg, "processing", 40))
             try:
-                result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+                if run_headless:
+                    result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+                else:
+                    subprocess.Popen(cmd, env=env)
+                    result = None
             except Exception as exc:
                 self.after(0, lambda: self.status_callback("CellProfiler failed", "error", 0))
                 self.after(0, lambda: messagebox.showerror(
@@ -702,7 +924,7 @@ class SegmentationPanel(ttk.LabelFrame):
                 ))
                 return
 
-            if result.returncode != 0:
+            if run_headless and result and result.returncode != 0:
                 stderr_tail = (result.stderr or "").strip()
                 if len(stderr_tail) > 1200:
                     stderr_tail = stderr_tail[-1200:]
@@ -715,13 +937,26 @@ class SegmentationPanel(ttk.LabelFrame):
                 ))
                 return
 
-            self.after(0, lambda: self.status_callback("CellProfiler launched", "success", 100))
-            self.after(0, lambda: messagebox.showinfo(
-                "CellProfiler Launched",
-                f"CellProfiler: {cp_exec}\n"
-                f"Selected pipeline: {pipeline_path if pipeline_path else 'Choose in CellProfiler'}\n"
-                "Input/output: choose in CellProfiler"
-            ))
+            if run_headless:
+                self.after(0, lambda: self.status_callback("CellProfiler segmentation completed", "success", 100))
+                self.after(0, lambda: messagebox.showinfo(
+                    "Segmentation Complete",
+                    f"CellProfiler finished headless segmentation.\n\n"
+                    f"Input folder:\n{input_dir}\n\n"
+                    f"Output folder:\n{output_dir}\n\n"
+                    f"Pipeline:\n{configured_pipeline_path}\n\n"
+                    f"Export mode:\n{export_mode}"
+                ))
+            else:
+                self.after(0, lambda: self.status_callback("CellProfiler launched", "success", 100))
+                self.after(0, lambda: messagebox.showinfo(
+                    "CellProfiler Launched",
+                    f"CellProfiler: {cp_exec}\n"
+                    f"Selected pipeline: {configured_pipeline_path if configured_pipeline_path else 'Choose in CellProfiler'}\n"
+                    f"Export mode: {export_mode}\n"
+                    f"Images folder:\n{input_dir}\n\n"
+                    f"Output folder:\n{output_dir}"
+                ))
 
         threading.Thread(target=process, daemon=True).start()
 class MaskingPanel(ttk.LabelFrame):
@@ -737,15 +972,12 @@ class MaskingPanel(ttk.LabelFrame):
         self.overwrite_var = tk.BooleanVar(value=True)
         self.mask_output_type = tk.StringVar(value="all")
 
-        # Upload folders - side by side
+        # SHG input selection
         upload_frame = ttk.Frame(self)
         upload_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        left_frame = ttk.Frame(upload_frame)
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
-        
+
         self.shg_upload = DragDropUploadField(
-            left_frame,
+            upload_frame,
             "SHG Images",
             "SHG image files",
             "image/*",
@@ -754,19 +986,6 @@ class MaskingPanel(ttk.LabelFrame):
             allow_multiple=True
         )
         self.shg_upload.pack(fill=tk.BOTH, expand=True)
-        
-        right_frame = ttk.Frame(upload_frame)
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
-
-        self.output_upload = DragDropUploadField(
-            right_frame,
-            "Mask Output Folder",
-            "Folder to save masks and reports",
-            "folder",
-            "Folder where MATLAB should save masks, figures, and stats output.",
-            icon='folder'
-        )
-        self.output_upload.pack(fill=tk.BOTH, expand=True)
 
         params_frame = tk.Frame(self, bg="#f0f0f0", relief=tk.RIDGE, bd=2)
         params_frame.pack(fill=tk.X, pady=(0, 10))
@@ -853,16 +1072,16 @@ class MaskingPanel(ttk.LabelFrame):
         
         label_frame = ttk.Frame(output_frame)
         label_frame.pack(fill=tk.X, pady=(0, 5))
-        ttk.Label(label_frame, text="Masked Images Output Directory", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
+        ttk.Label(label_frame, text="Mask Output Folder", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
         help_btn = ttk.Label(label_frame, text=" ℹ️", cursor="hand2")
         help_btn.pack(side=tk.LEFT)
-        ToolTip(help_btn, "Directory where masked/unmasked images will be saved")
+        ToolTip(help_btn, "Choose where MATLAB should save masks, figures, and stats output.")
         
         path_input_frame = ttk.Frame(output_frame)
         path_input_frame.pack(fill=tk.X)
         
         self.output_path = ttk.Entry(path_input_frame)
-        self.output_path.insert(0, "./results/masked_images")
+        self.output_path.insert(0, "./results/masks")
         self.output_path.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         
         ttk.Button(path_input_frame, text="📁", width=3,
@@ -872,7 +1091,6 @@ class MaskingPanel(ttk.LabelFrame):
         create_btn = ttk.Button(self, text="▶ Create Masks", command=self.create_masks)
         create_btn.pack(fill=tk.X)
         ToolTip(create_btn, "Process SHG images with the MATLAB masking runner")
-        output_frame.pack_forget()
     
     def browse_output(self):
         """Browse for output folder"""
@@ -894,11 +1112,12 @@ class MaskingPanel(ttk.LabelFrame):
     def create_masks(self):
         """Create SHG-based masks by calling the MATLAB runner."""
         if not self.shg_upload.get_file():
-            self.status_callback("Error: Please select SHG images folder", 'error', 0)
-            messagebox.showerror("Error", "Please select SHG images folder")
+            self.status_callback("Error: Please select SHG images", 'error', 0)
+            messagebox.showerror("Error", "Please select SHG images")
             return
 
-        if not self.output_upload.get_file():
+        out_dir = self.output_path.get().strip()
+        if not out_dir:
             self.status_callback("Error: Please select a mask output folder", 'error', 0)
             messagebox.showerror("Error", "Please select a mask output folder")
             return
@@ -922,7 +1141,6 @@ class MaskingPanel(ttk.LabelFrame):
             return
 
         shg_input = self.shg_upload.get_file()
-        out_dir = self.output_upload.get_file()
         roi_mode = self.roi_mode.get()
         rot_mode = self.rotation_mode.get()
         do_enhance = self.enhance_var.get()
