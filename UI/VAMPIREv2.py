@@ -170,6 +170,43 @@ def configure_cellprofiler_pipeline(pipeline_path, output_dir, export_mode):
     return temp_file.name
 
 
+def prepare_cellprofiler_input_dir(image_input, image_paths, output_dir):
+    """Return the input directory CellProfiler should read from for this run."""
+    if not image_input:
+        raise ValueError("Image input is required.")
+
+    if isinstance(image_input, (list, tuple)):
+        selected_paths = [Path(path) for path in image_paths]
+        if not selected_paths:
+            raise ValueError("No valid images were selected.")
+
+        source_dirs = {str(path.parent.resolve()) for path in selected_paths}
+        if len(source_dirs) != 1:
+            raise ValueError("Selected images must come from the same folder.")
+
+        staging_dir = Path(output_dir) / "_cellprofiler_input"
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)
+        staging_dir.mkdir(parents=True, exist_ok=True)
+
+        for source_path in selected_paths:
+            shutil.copy2(source_path, staging_dir / source_path.name)
+        return str(staging_dir)
+
+    image_input_path = Path(image_input)
+    if image_input_path.is_dir():
+        return str(image_input_path)
+    if image_input_path.is_file():
+        staging_dir = Path(output_dir) / "_cellprofiler_input"
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(image_input_path, staging_dir / image_input_path.name)
+        return str(staging_dir)
+
+    raise ValueError("Could not prepare CellProfiler input directory.")
+
+
 def normalize_mask_key(stem):
     """Normalize a filename stem to a base key for image/mask matching."""
     normalized = str(stem)
@@ -551,10 +588,10 @@ class ModelPreviewDialog(tk.Toplevel):
 class SegmentationPanel(ttk.LabelFrame):
     """Panel for CellProfiler-based image segmentation"""
     def __init__(self, parent, status_callback):
-        super().__init__(parent, text="Segmentation - CellProfiler pipeline for raw image processing", padding=15)
+        super().__init__(parent, text="SEGMENTATION - CellProfiler pipeline for raw image processing", padding=15)
         self.status_callback = status_callback
         self.valid_image_ext = {".tiff", ".tif", ".jpeg", ".jpg", ".png", ".bmp", ".gif"}
-        self.valid_pipeline_ext = {".cpproj", ".cppipe"}
+        self.valid_pipeline_ext = {".cppipe"}
         base_dir = os.path.dirname(os.path.abspath(__file__))
 
         # Presets are resolved dynamically from common repo-relative locations.
@@ -818,7 +855,7 @@ class SegmentationPanel(ttk.LabelFrame):
 
         if pipeline_choice != self.launch_option:
             if not pipeline_path:
-                self.status_callback("Error: Please select a valid .cpproj/.cppipe pipeline", "error", 0)
+                self.status_callback("Error: Please select a valid .cppipe pipeline", "error", 0)
                 messagebox.showerror(
                     "Error",
                     "Pipeline not found. Keep pipeline files in project root or ./pipelines."
@@ -829,8 +866,8 @@ class SegmentationPanel(ttk.LabelFrame):
                 messagebox.showerror("Error", f"Pipeline file not found:\n{pipeline_path}")
                 return
             if Path(pipeline_path).suffix.lower() not in self.valid_pipeline_ext:
-                self.status_callback("Error: Pipeline must be .cpproj or .cppipe", "error", 0)
-                messagebox.showerror("Error", "Pipeline must be a .cpproj or .cppipe file")
+                self.status_callback("Error: Pipeline must be .cppipe", "error", 0)
+                messagebox.showerror("Error", "Pipeline must be a .cppipe file")
                 return
 
         if not image_input:
@@ -848,16 +885,6 @@ class SegmentationPanel(ttk.LabelFrame):
             )
             return
 
-        input_dirs = {str(path.parent) for path in image_paths}
-        if len(input_dirs) != 1:
-            self.status_callback("Error: Images must come from one folder", "error", 0)
-            messagebox.showerror(
-                "Multiple Folders Selected",
-                "CellProfiler headless runs need all selected images to come from the same folder."
-            )
-            return
-        input_dir = next(iter(input_dirs))
-
         if not output_dir:
             self.status_callback("Error: Please select an output folder", "error", 0)
             messagebox.showerror("Error", "Please select an output folder for segmentation.")
@@ -868,6 +895,16 @@ class SegmentationPanel(ttk.LabelFrame):
         except OSError as exc:
             self.status_callback("Error: Could not create output folder", "error", 0)
             messagebox.showerror("Error", f"Could not create output folder:\n{output_dir}\n\n{exc}")
+            return
+
+        try:
+            input_dir = prepare_cellprofiler_input_dir(image_input, image_paths, output_dir)
+        except Exception as exc:
+            self.status_callback("Error: Could not prepare selected images", "error", 0)
+            messagebox.showerror(
+                "Input Preparation Failed",
+                f"Could not prepare the selected images for CellProfiler.\n\n{exc}"
+            )
             return
 
         if run_headless and pipeline_choice == self.launch_option:
@@ -962,7 +999,7 @@ class SegmentationPanel(ttk.LabelFrame):
 class MaskingPanel(ttk.LabelFrame):
     """Panel for SHG-based masking with damage region analysis"""
     def __init__(self, parent, status_callback):
-        super().__init__(parent, text="🎭 Masking - SHG damage region mask creation and application", padding=15)
+        super().__init__(parent, text="MASKING - SHG damage region mask creation and application", padding=15)
         self.status_callback = status_callback
         self.roi_mode = tk.StringVar(value="auto")
         self.rotation_mode = tk.StringVar(value="none")
@@ -1185,7 +1222,7 @@ class MaskingPanel(ttk.LabelFrame):
 class BuildModelPanel(ttk.LabelFrame):
     """Panel for building shape analysis models"""
     def __init__(self, parent, status_callback, on_model_built):
-        super().__init__(parent, text="⚙️ Build Model - Create a new shape analysis model", padding=15)
+        super().__init__(parent, text="BUILD MODEL - Create a new shape analysis model", padding=15)
         self.status_callback = status_callback
         self.on_model_built = on_model_built
         
@@ -1419,7 +1456,7 @@ class BuildModelPanel(ttk.LabelFrame):
 class ApplyModelPanel(ttk.LabelFrame):
     """Panel for applying models to new datasets"""
     def __init__(self, parent, status_callback, built_model_getter):
-        super().__init__(parent, text="💻 Apply Model - Apply trained model to new image sets", padding=15)
+        super().__init__(parent, text="APPLY MODEL - Apply trained model to new image sets", padding=15)
         self.status_callback = status_callback
         self.built_model_getter = built_model_getter
         self.use_built_model_var = tk.BooleanVar(value=False)
@@ -1862,7 +1899,7 @@ class VampireAnalysisApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Vampire Analysis - Shape Mode Analysis Tool v2")
-        self.root.geometry("950x950")
+        self.root.geometry("550x600")
         
         # Built model storage
         self.built_model = None
