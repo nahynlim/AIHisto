@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from PIL import Image
+from generate_vampire_input_csv import create_vampire_input_csv
 from matlab_mask_runner import run_matlab_mask_job
 from mainbody import mainbody
 from getboundary import getboundary
@@ -1002,7 +1003,13 @@ class MaskingPanel(ttk.LabelFrame):
         super().__init__(parent, text="MASKING - SHG damage region mask creation and application", padding=15)
         self.status_callback = status_callback
         self.roi_mode = tk.StringVar(value="auto")
-        self.rotation_mode = tk.StringVar(value="none")
+        self.rotation_mode_map = {
+            "None": "none",
+            "Vertical +90 Counterclockwise": "vertical",
+            "Horizontal -90 Clockwise": "horizontal",
+            "User Angle": "user",
+        }
+        self.rotation_mode = tk.StringVar(value="None")
         self.enhance_var = tk.BooleanVar(value=False)
         self.create_mask_var = tk.BooleanVar(value=True)
         self.save_figures_var = tk.BooleanVar(value=True)
@@ -1082,8 +1089,8 @@ class MaskingPanel(ttk.LabelFrame):
             rotation_row,
             textvariable=self.rotation_mode,
             state="readonly",
-            values=["none", "vertical", "horizontal", "user"],
-            width=18
+            values=list(self.rotation_mode_map.keys()),
+            width=30
         )
         self.rotation_mode_combo.pack(side=tk.LEFT, padx=(0, 10))
         self.rotation_mode_combo.bind("<<ComboboxSelected>>", lambda _event: self.toggle_user_angle())
@@ -1138,7 +1145,7 @@ class MaskingPanel(ttk.LabelFrame):
 
     def toggle_user_angle(self):
         """Enable user angle only when custom rotation is selected."""
-        if self.rotation_mode.get() == "user":
+        if self.rotation_mode_map.get(self.rotation_mode.get(), "none") == "user":
             self.user_angle.configure(state="normal")
         else:
             self.user_angle.configure(state="normal")
@@ -1179,7 +1186,7 @@ class MaskingPanel(ttk.LabelFrame):
 
         shg_input = self.shg_upload.get_file()
         roi_mode = self.roi_mode.get()
-        rot_mode = self.rotation_mode.get()
+        rot_mode = self.rotation_mode_map.get(self.rotation_mode.get(), "none")
         do_enhance = self.enhance_var.get()
         do_mask = self.create_mask_var.get()
         save_figures = self.save_figures_var.get()
@@ -1533,7 +1540,7 @@ class ApplyModelPanel(ttk.LabelFrame):
 
         self.input_mode_frame = ttk.Frame(self)
         self.input_mode_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(self.input_mode_frame, text="Apply Model Input Type", font=("Arial", 9, "bold")).pack(anchor=tk.W, pady=(0, 5))
+        ttk.Label(self.input_mode_frame, text="Segmented Image Input Type", font=("Arial", 9, "bold")).pack(anchor=tk.W, pady=(0, 5))
         self.apply_input_mode = tk.StringVar(value="CSV")
         self.apply_input_mode_combo = ttk.Combobox(
             self.input_mode_frame,
@@ -1783,17 +1790,14 @@ class ApplyModelPanel(ttk.LabelFrame):
 
         folder_name = os.path.basename(os.path.normpath(image_folder)) or "dataset"
         csv_path = os.path.join(output_folder, f"{folder_name}_apply_dataset.csv")
-        df = pd.DataFrame([
-            {
-                "set ID": 1,
-                "condition": folder_name,
-                "set location": image_folder,
-                "tag": "",
-                "note": "Auto-generated from Apply Model folder selection",
-            }
-        ])
-        df.to_csv(csv_path, index=False)
-        return csv_path
+        return create_vampire_input_csv(
+            [image_folder],
+            [folder_name],
+            csv_path,
+            tag="",
+            mode="apply",
+            note="Auto-generated from Apply Model folder selection",
+        )
 
     def update_model_notice(self, model_data):
         """Update the built model notice"""
