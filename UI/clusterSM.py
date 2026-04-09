@@ -123,7 +123,7 @@ def clusterSM(outpth, score, bdpc, clnum, pcnum=None, VamModel=None, BuildModel=
     cluster.hierarchy.set_link_color_palette(['k'])
     fig289, ax289 = plt.subplots(figsize=(6, 2), linewidth=2.0, frameon=False)
     plt.yticks([])
-    R = cluster.hierarchy.dendrogram(Z, p=0, truncate_mode='mlab', orientation='bottom', ax=None,
+    R = cluster.hierarchy.dendrogram(Z, p=0, truncate_mode='level', orientation='bottom', ax=None,
                                      above_threshold_color='k')
     leaflabel = np.array(R['ivl'])
     dendidx = leaflabel
