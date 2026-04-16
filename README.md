@@ -44,13 +44,7 @@ Python >= 3.9
 Install dependencies using the provided `requirements.txt` file:
 
 ```bash
-pip install -r requirements.txt
-```
-
-Install MATLAB Engine:
-
-```bash
-pip install matlabengine
+pip install -r AIHisto/requirements.txt
 ```
 
 ## External Software
