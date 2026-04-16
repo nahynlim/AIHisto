@@ -2027,8 +2027,22 @@ class VampireAnalysisApp:
         
         # Enable mousewheel scrolling
         def on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            if sys.platform == "darwin":
+                step = -1 if event.delta > 0 else 1
+            else:
+                step = int(-1 * (event.delta / 120))
+            if step != 0:
+                canvas.yview_scroll(step, "units")
+
+        def on_linux_scroll(event):
+            if event.num == 4:
+                canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                canvas.yview_scroll(1, "units")
+
         canvas.bind_all("<MouseWheel>", on_mousewheel)
+        canvas.bind_all("<Button-4>", on_linux_scroll)
+        canvas.bind_all("<Button-5>", on_linux_scroll)
 
         # Keep the scrollable frame width synced with the canvas width so panels expand on resize.
         def on_canvas_configure(event):

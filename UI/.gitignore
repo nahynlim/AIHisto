@@ -1,5 +1,4 @@
 __pycache__/
-*.py[cod]
 
 .venv/
 .conda/
@@ -14,3 +13,5 @@ results/
 README.md/
 
 README.txt/
+
+.venv39
