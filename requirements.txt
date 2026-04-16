@@ -1,1 +1,9 @@
-This is where we will update on the requirmenets that are necessary to run our software
+numpy
+pandas
+scipy
+matplotlib
+joblib
+pillow
+opencv-python
+scikit-image
+scikit-learn
