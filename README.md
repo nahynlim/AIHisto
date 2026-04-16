@@ -1,4 +1,4 @@
-[TEAM25_VisualDiagram.pdf](https://github.com/user-attachments/files/26803453/TEAM25_VisualDiagram.pdf)
+<img width="1079" height="1079" alt="TEAM25_VisualDiagram" src="https://github.com/user-attachments/assets/319f46cb-f465-42d3-b20c-0e819f80e234" />
 
 # About:
 <name> is a GUI-based pipeline for microscopy image analysis that integrates:
