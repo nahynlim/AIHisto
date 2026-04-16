@@ -1,5 +1,7 @@
+[TEAM25_VisualDiagram.pdf](https://github.com/user-attachments/files/26803453/TEAM25_VisualDiagram.pdf)
+
 # About:
-AIHisto is a GUI-based pipeline for microscopy image analysis that integrates:
+<name> is a GUI-based pipeline for microscopy image analysis that integrates:
 
 - **CellProfiler** for image segmentation  
 - **MATLAB** for SHG-based masking  
