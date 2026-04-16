@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+
+.venv/
+.conda/
+
+.vscode/
+
+.DS_Store
+Thumbs.db
+
+results/
+
+README.md/
+
+README.txt/

@@ -5,8 +5,8 @@ from tkinter import *
 from tkinter import filedialog
 from tkinter.ttk import *
 # my files
-from mainbody import mainbody
-from getboundary import getboundary
+from vampire.mainbody import mainbody
+from vampire.getboundary import getboundary
 
 
 def makeform(root, fields):

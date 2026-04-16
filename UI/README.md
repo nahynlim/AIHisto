@@ -1,6 +1,6 @@
 # AIHisto UI README
 
-This repository contains a GUI-driven workflow for image segmentation, SHG masking, and VAMPIRE-based shape analysis. This README is intended as a working protocol draft that you can continue editing as the project setup becomes more finalized.
+This repository contains a GUI-driven workflow for image segmentation, SHG masking, and VAMPIRE-based shape analysis. This README is a working protocol document that you can continue refining as the project evolves.
 
 ## Overview
 
@@ -13,7 +13,7 @@ The current workflow has up to four major stages:
 
 The main GUI entry point is:
 
-```powershell
+```cmd
 python VAMPIREv2.py
 ```
 
@@ -61,8 +61,8 @@ or the internal executable:
 
 - If the GUI says CellProfiler cannot be found, use the browse button and select the application or executable manually.
 - CellProfiler is used in two places in this repo:
-  - Segmentation of raw input images
-  - Launching the masking pipeline that combines staining images and masks
+  - segmentation of raw input images
+  - launching the masking pipeline that combines staining images and masks
 
 ### 2. MATLAB installation
 
@@ -84,142 +84,391 @@ MATLAB is used for the SHG masking workflow.
 
 #### Important note for both Windows and macOS
 
-The GUI does not only require MATLAB itself. It also requires the MATLAB Engine for Python to be installed into the same Python environment you use to launch `VAMPIREv2.py`.
+The GUI requires MATLAB itself and also MATLAB Engine for Python in the same Python environment used to launch `VAMPIREv2.py`.
 
-A typical install pattern is:
+Python-version compatibility matters:
 
-1. Open a terminal.
-2. Go to MATLAB's Python engine folder.
-3. Install it into the active Python environment.
+- `MATLAB R2023a` is the last release that supports Python `3.8.x`
+- `MATLAB R2023b` and newer should use a Python `3.9.x` environment
 
-Example locations vary by MATLAB version. For example:
+If this step is missing, the GUI masking workflow will fail with a MATLAB Engine import error.
 
-```powershell
+After activating the correct Python environment, first try:
+
+```cmd
+python -m pip install matlab.engine
+```
+
+If needed, install from the MATLAB engine folder.
+
+#### Windows Command Prompt
+
+```cmd
 cd "C:\Program Files\MATLAB\R20XXx\extern\engines\python"
 python -m pip install .
 ```
+
+#### macOS Terminal
 
 ```bash
 cd /Applications/MATLAB_R20XXx.app/extern/engines/python
 python3 -m pip install .
 ```
 
-If this step is missing, the GUI masking workflow will fail with a MATLAB Engine import error.
+## Required Python Version
 
-## Python Dependencies
+Users should install a specific Python version before creating the project environment.
 
-You mentioned you already have the dependency download commands through Command Prompt, so this section is just a placeholder structure you can refine.
+### Recommended version
 
-### Suggested core Python packages
+Choose the Python version based on your MATLAB version:
 
-Based on the current codebase, the environment likely needs packages such as:
+- If you are using `MATLAB R2023a`, the last supported Python series is `Python 3.8.x`
+- If you are using `MATLAB R2023b` or newer, use a `Python 3.9.x` environment
 
-- `numpy`
-- `pandas`
-- `scipy`
-- `scikit-learn`
-- `matplotlib`
-- `pillow`
-- `opencv-python`
-- `scikit-image`
-- `joblib`
+For this project, the default recommendation is:
 
-If you later create a formal dependency file, place it in the repo root as something like:
+- `Python 3.9.x`
 
-- `requirements.txt`
-- or `environment.yml`
+### Install Python before creating the environment
 
-Then this section can be replaced with the exact install command you want users to run.
+#### Windows Command Prompt
+
+1. Open your browser and go to the official Python downloads page: `https://www.python.org/downloads/`
+2. Download the Windows installer for the Python version you need:
+   - `Python 3.8.x` if using `MATLAB R2023a`
+   - `Python 3.9.x` if using `MATLAB R2023b` or newer
+3. Run the installer.
+4. Make sure to check `Add Python to PATH` during installation.
+5. Finish installation.
+6. Open `Command Prompt`.
+7. Confirm installation:
+
+If you are using `MATLAB R2023a`:
+
+```cmd
+py -3.8 --version
+```
+
+If you are using `MATLAB R2023b` or newer:
+
+```cmd
+py -3.9 --version
+```
+
+#### macOS Terminal
+
+1. Open your browser and go to the official Python downloads page: `https://www.python.org/downloads/`
+2. Download the macOS installer for the Python version you need:
+   - `Python 3.8.x` if using `MATLAB R2023a`
+   - `Python 3.9.x` if using `MATLAB R2023b` or newer
+3. Run the installer and complete setup.
+4. Open `Terminal`.
+5. Confirm installation:
+
+If you are using `MATLAB R2023a`:
+
+```bash
+python3.8 --version
+```
+
+If you are using `MATLAB R2023b` or newer:
+
+```bash
+python3.9 --version
+```
+
+If the command for your chosen version is not found, install that Python version first before continuing.
 
 ## Python Environment Setup
 
 The project should be run from a dedicated Python environment.
 
-### Windows setup
+### Setup protocol
 
-#### Command Prompt
+Follow this order:
 
-Create an environment:
+1. Download and install the correct Python version from `python.org`.
+2. Open the correct terminal for your operating system.
+3. Go to the `UI/` project folder.
+4. Create the virtual environment manually.
+5. Activate the virtual environment.
+6. Install the Python packages.
+7. Install `matlab.engine`.
+8. Launch `VAMPIREv2.py`.
+
+### Windows setup using Command Prompt
+
+#### Step 1. Open Command Prompt
+
+Use `Command Prompt`, not PowerShell.
+
+#### Step 2. Go to the project folder
 
 ```cmd
-py -m venv .venv
+cd C:\path\to\AIHisto\UI
 ```
 
-Activate it:
+#### Step 3. Create the environment manually
+
+If you are using `MATLAB R2023a`:
+
+```cmd
+py -3.8 -m venv .venv
+```
+
+If you are using `MATLAB R2023b` or newer:
+
+```cmd
+py -3.9 -m venv .venv
+```
+
+#### Step 4. Activate the environment
 
 ```cmd
 .venv\Scripts\activate
 ```
 
-#### PowerShell
-
-Create an environment:
-
-```powershell
-py -m venv .venv
-```
-
-Activate it:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-If PowerShell blocks activation, you may need:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
-#### Anaconda Prompt
-
-If you use conda instead:
+#### Step 5. Confirm the Python version
 
 ```cmd
-conda create -n aihisto python=3.9
-conda activate aihisto
+python --version
 ```
 
-### macOS setup
+#### Step 6. Install the Python packages
 
-#### Terminal with `venv`
+```cmd
+python -m pip install numpy pandas pillow scipy opencv-python scikit-image joblib scikit-learn matplotlib
+```
 
-Create an environment:
+#### Step 7. Install MATLAB Engine for Python
+
+```cmd
+python -m pip install matlabengine
+```
+
+If `matlabengine` does not install directly, install it from the MATLAB `extern/engines/python` folder:
+
+Option 1. Open `Command Prompt` as Administrator and run:
+
+```cmd
+cd "C:\Program Files\MATLAB\R20XXx\extern\engines\python"
+python -m pip install .
+```
+
+Option 2. If you do not want to install from `Program Files`, copy the MATLAB engine folder to a writable location and install from there.
+
+#### Step 8. Launch the GUI
+
+```cmd
+cd C:\path\to\AIHisto\UI
+python VAMPIREv2.py
+```
+
+### macOS setup using Terminal
+
+#### Step 1. Open Terminal
+
+Use `Terminal`.
+
+#### Step 2. Go to the project folder
 
 ```bash
-python3 -m venv .venv
+cd /path/to/AIHisto/UI
 ```
 
-Activate it:
+#### Step 3. Create the environment manually
+
+If you are using `MATLAB R2023a`:
+
+```bash
+python3.8 -m venv .venv
+```
+
+If you are using `MATLAB R2023b` or newer:
+
+```bash
+python3.9 -m venv .venv
+```
+
+#### Step 4. Activate the environment
 
 ```bash
 source .venv/bin/activate
 ```
 
-#### Conda on macOS
+#### Step 5. Confirm the Python version
 
 ```bash
-conda create -n aihisto python=3.9
-conda activate aihisto
+python3 --version
 ```
 
-### Running the GUI
+#### Step 6. Install the Python packages
+
+```bash
+python3 -m pip install numpy pandas pillow scipy opencv-python scikit-image joblib scikit-learn matplotlib
+```
+
+#### Step 7. Install MATLAB Engine for Python
+
+```bash
+python3 -m pip install matlabengine
+```
+
+If `matlab.engine` does not install directly, install it from the MATLAB `extern/engines/python` folder:
+
+```bash
+cd /Applications/MATLAB_R20XXx.app/extern/engines/python
+python3 -m pip install .
+```
+
+#### Step 8. Launch the GUI
+
+```bash
+cd /path/to/AIHisto/UI
+python3 VAMPIREv2.py
+```
+
+### If you created the environment with the wrong Python version
+
+Delete the old environment folder and recreate it with the correct Python version for your MATLAB release.
+
+#### Windows Command Prompt
+
+If you are using `MATLAB R2023a`:
+
+```cmd
+rmdir /s /q .venv
+py -3.8 -m venv .venv
+.venv\Scripts\activate
+```
+
+If you are using `MATLAB R2023b` or newer:
+
+```cmd
+rmdir /s /q .venv
+py -3.9 -m venv .venv
+.venv\Scripts\activate
+```
+
+#### macOS Terminal
+
+If you are using `MATLAB R2023a`:
+
+```bash
+rm -rf .venv
+python3.8 -m venv .venv
+source .venv/bin/activate
+```
+
+If you are using `MATLAB R2023b` or newer:
+
+```bash
+rm -rf .venv
+python3.9 -m venv .venv
+source .venv/bin/activate
+```
+
+## Running the GUI
 
 After activating the environment and installing dependencies:
 
-```powershell
+```cmd
 python VAMPIREv2.py
 ```
 
-On macOS this may be:
+On macOS Terminal:
 
 ```bash
 python3 VAMPIREv2.py
 ```
 
+## How to Launch the GUI
+
+The current recommended way to open the software is to run the Python GUI file directly.
+
+### Windows Command Prompt
+
+```cmd
+cd C:\path\to\AIHisto\UI
+.venv\Scripts\activate
+python VAMPIREv2.py
+```
+
+### macOS Terminal
+
+```bash
+cd /path/to/AIHisto/UI
+source .venv/bin/activate
+python3 VAMPIREv2.py
+```
+
+### Can this become an executable?
+
+Yes, in the future this project could be packaged as:
+
+- a Windows `.exe`
+- a macOS `.app`
+
+However, the current project still depends on external software such as CellProfiler and MATLAB, so the most reliable method right now is to launch `VAMPIREv2.py` from an activated Python environment.
+
 ## Repository File Organization
 
 This section explains where the main code and pipeline assets live.
+
+## Repository Directory Paths
+
+The project root is the `UI/` folder. A typical layout now looks like:
+
+```text
+UI/
+├─ VAMPIREv2.py
+├─ vampire/
+│  ├─ __init__.py
+│  ├─ mainbody.py
+│  ├─ getboundary.py
+│  ├─ clusterSM.py
+│  └─ ...
+├─ pipelines/
+│  ├─ Blue_Nuclei_Segmentation_Pipeline.cppipe
+│  ├─ Blue_Nuclei_Segmentation_Pipeline.cpproj
+│  ├─ Nuclei_Segmentation_Pipeline.cppipe
+│  ├─ Nuclei_Segmentation_Pipeline.cpproj
+│  └─ Masking_pipeline.cpproj
+├─ matlab/
+├─ results/
+├─ Supplementary Data/
+└─ README.md
+```
+
+### Important paths users may need
+
+- GUI launcher:
+  - `UI/VAMPIREv2.py`
+- Core VAMPIRE analysis code:
+  - `UI/vampire/`
+- CellProfiler pipelines:
+  - `UI/pipelines/`
+- MATLAB scripts:
+  - `UI/matlab/`
+- Example inputs and outputs:
+  - `UI/Supplementary Data/`
+- Generated run outputs:
+  - `UI/results/`
+
+### Full path example
+
+On Windows, a full path may look like:
+
+```text
+C:\path\to\AIHisto\UI\VAMPIREv2.py
+```
+
+On macOS, a full path may look like:
+
+```text
+/path/to/AIHisto/UI/VAMPIREv2.py
+```
 
 ### Main Python files
 
@@ -227,10 +476,6 @@ This section explains where the main code and pipeline assets live.
   - Main GUI used for segmentation, masking, model building, and model application.
 - `vampire.py`
   - Older legacy GUI.
-- `mainbody.py`
-  - Core model-building and model-application logic.
-- `getboundary.py`
-  - Extracts object boundaries and generates VAMPIRE-ready boundary data from segmented images.
 - `generate_vampire_input_csv.py`
   - Utility for creating dataset CSV files used by build/apply workflows.
 - `matlab_mask_runner.py`
@@ -238,28 +483,28 @@ This section explains where the main code and pipeline assets live.
 
 ### Core analysis modules
 
-- `bdreg.py`
-- `bd_resample.py`
-- `pca_bdreg.py`
-- `clusterSM.py`
-- `PCA_custom.py`
-- `reg_bd3.py`
-- `reg_bd_svd.py`
-- `update_csv.py`
-- `collect_selected_bstack.py`
+- `vampire/mainbody.py`
+- `vampire/getboundary.py`
+- `vampire/clusterSM.py`
+- `vampire/bdreg.py`
+- `vampire/bd_resample.py`
+- `vampire/pca_bdreg.py`
+- `vampire/PCA_custom.py`
+- `vampire/reg_bd3.py`
+- `vampire/reg_bd_svd.py`
+- `vampire/update_csv.py`
+- `vampire/collect_selected_bstack.py`
 
 These files support boundary registration, PCA, clustering, and CSV/result updates for the VAMPIRE workflow.
 
 ### CellProfiler pipeline files
 
-- `Blue_Nuclei_Segmentation_Pipeline.cppipe`
-- `Blue_Nuclei_Segmentation_Pipeline.cpproj`
-- `Nuclei_Segmentation_Pipeline.cppipe`
-- `Nuclei_Segmentation_Pipeline.cpproj`
-- `Masking_pipeline.cpproj`
+- `pipelines/Blue_Nuclei_Segmentation_Pipeline.cppipe`
+- `pipelines/Blue_Nuclei_Segmentation_Pipeline.cpproj`
+- `pipelines/Nuclei_Segmentation_Pipeline.cppipe`
+- `pipelines/Nuclei_Segmentation_Pipeline.cpproj`
+- `pipelines/Masking_pipeline.cpproj`
 - `Supplementary Data/CellProfiler segmentation pipeline.cppipe`
-
-These are CellProfiler project or pipeline files used during segmentation and masking-related steps.
 
 ### MATLAB scripts
 
@@ -272,28 +517,17 @@ Important scripts include:
 - `matlab/run_FFT_align_msk_v3_autoROI_from_python.m`
 - `matlab/FFT_align_msk_update_03_24_2026.m`
 - `matlab/FFT_align_msk_SHG_controlRef_singleOrBatch.m`
-- supporting helper functions in the same folder
 
 ### Example and supplementary data
 
 - `Supplementary Data/Example images/`
-  - Example raw or source image folders.
 - `Supplementary Data/Example segmented images/`
-  - Example segmented outputs used for model workflows.
 - `Supplementary Data/Example output/`
-  - Example model output and figures.
 
 ### Output folders
 
 - `results/`
-  - General output folder for segmentation and model application results.
 - `results/model_output/`
-  - Example apply-model outputs.
-
-You may later want to add:
-
-- `models/`
-  - A dedicated place for saved model `.pickle` files.
 
 ## Expected Data Organization
 
@@ -358,9 +592,7 @@ Use this section when starting from raw microscopy images.
 3. Select the segmentation pipeline you want to use.
 4. Confirm the CellProfiler executable path.
 5. Choose a segmented output folder.
-6. Choose whether to:
-   - run headless
-   - or open CellProfiler interactively
+6. Choose whether to run headless or open CellProfiler interactively.
 7. Click `Start Segmentation`.
 
 What to expect:
@@ -430,9 +662,7 @@ What happens internally:
 Use this section to apply a previously built model to a new dataset.
 
 1. Prepare a dataset CSV for the segmented image folders you want to analyze.
-2. In `APPLY MODEL`, either:
-   - upload a model `.pkl` or `.pickle`
-   - or use the model built in the current GUI session
+2. In `APPLY MODEL`, either upload a model `.pkl` or `.pickle`, or use the model built in the current GUI session.
 3. Upload the apply-model CSV, or choose a folder if using folder mode.
 4. Select the result output folder.
 5. Click `Apply Model`.
@@ -448,13 +678,13 @@ What happens internally:
 
 Users will usually need to browse for files in these places:
 
-- Raw image folders for segmentation
+- raw image folders for segmentation
 - SHG image folders for mask creation
-- Mask output folders produced by MATLAB
-- Segmented image folders for model build/apply
-- Dataset CSV files created for VAMPIRE input
-- Saved model `.pickle` files
-- Output folders for results and figures
+- mask output folders produced by MATLAB
+- segmented image folders for model build/apply
+- dataset CSV files created for VAMPIRE input
+- saved model `.pickle` files
+- output folders for results and figures
 
 ## Warnings and Practical Notes
 
@@ -500,11 +730,10 @@ Users should know these are intermediate workflow files and not necessarily orig
 
 This README is a working draft. Good next improvements would be:
 
-1. Add the exact dependency install command you want users to run.
-2. Add screenshots of each GUI section.
-3. Add one full worked example from raw image to final plot.
-4. Add a short troubleshooting section for common errors.
-5. Add a formal `requirements.txt` or `environment.yml`.
+1. Add screenshots of each GUI section.
+2. Add one full worked example from raw image to final plot.
+3. Add a short troubleshooting section for common errors.
+4. Add a formal `requirements.txt`.
 
 ## Quick Start Summary
 
@@ -516,4 +745,3 @@ If you already have all software installed:
 4. Create SHG masks if needed.
 5. Build a model from segmented-image dataset CSVs.
 6. Apply the saved model to new segmented-image dataset CSVs.
-

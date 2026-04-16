@@ -23,8 +23,8 @@ import pandas as pd
 from PIL import Image
 from generate_vampire_input_csv import create_vampire_input_csv
 from matlab_mask_runner import run_matlab_mask_job
-from mainbody import mainbody
-from getboundary import getboundary
+from vampire.mainbody import mainbody
+from vampire.getboundary import getboundary
 
 
 class LegacyTextAdapter:
@@ -206,6 +206,32 @@ def prepare_cellprofiler_input_dir(image_input, image_paths, output_dir):
         return str(staging_dir)
 
     raise ValueError("Could not prepare CellProfiler input directory.")
+
+
+def cleanup_cellprofiler_temp_artifacts(image_input, input_dir, original_pipeline_path, configured_pipeline_path):
+    """Remove temporary staging artifacts created for a headless CellProfiler run."""
+    input_dir_path = Path(input_dir) if input_dir else None
+    original_pipeline = Path(original_pipeline_path).resolve() if original_pipeline_path else None
+    configured_pipeline = Path(configured_pipeline_path).resolve() if configured_pipeline_path else None
+
+    # Remove staged input only when the GUI created a temporary folder.
+    uses_direct_folder_input = not isinstance(image_input, (list, tuple)) and Path(image_input).is_dir()
+    if input_dir_path is not None and not uses_direct_folder_input:
+        if input_dir_path.name == "_cellprofiler_input" and input_dir_path.exists():
+            shutil.rmtree(input_dir_path, ignore_errors=True)
+
+    # Remove the run-specific temporary pipeline copy, never the source pipeline.
+    if (
+        configured_pipeline is not None
+        and configured_pipeline.exists()
+        and configured_pipeline.suffix.lower() == ".cppipe"
+        and configured_pipeline.name.startswith("segmentation_run_")
+        and configured_pipeline != original_pipeline
+    ):
+        try:
+            configured_pipeline.unlink()
+        except OSError:
+            pass
 
 
 def normalize_mask_key(stem):
@@ -623,6 +649,13 @@ class SegmentationPanel(ttk.LabelFrame):
         run_mode_frame = ttk.Frame(self)
         run_mode_frame.pack(fill=tk.X, pady=(0, 10))
         ttk.Label(run_mode_frame, text="Run Mode", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
+        run_mode_help = ttk.Label(run_mode_frame, text=" i", cursor="hand2")
+        run_mode_help.pack(side=tk.LEFT)
+        ToolTip(
+            run_mode_help,
+            "Run Headless executes the selected CellProfiler pipeline automatically. "
+            "Open CellProfiler launches CellProfiler so you can inspect or run the pipeline yourself."
+        )
         self.segmentation_run_mode_combo = ttk.Combobox(
             run_mode_frame,
             textvariable=self.segmentation_run_mode,
@@ -635,6 +668,13 @@ class SegmentationPanel(ttk.LabelFrame):
         export_mode_frame = ttk.Frame(self)
         export_mode_frame.pack(fill=tk.X, pady=(0, 10))
         ttk.Label(export_mode_frame, text="Export Mode", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
+        export_mode_help = ttk.Label(export_mode_frame, text=" i", cursor="hand2")
+        export_mode_help.pack(side=tk.LEFT)
+        ToolTip(
+            export_mode_help,
+            "Both saves segmented images and spreadsheet outputs. "
+            "Images Only saves only image exports. Spreadsheet Only saves only measurement tables."
+        )
         self.segmentation_export_mode_combo = ttk.Combobox(
             export_mode_frame,
             textvariable=self.segmentation_export_mode,
@@ -960,6 +1000,13 @@ class SegmentationPanel(ttk.LabelFrame):
                     "Segmentation Failed",
                     f"Could not start CellProfiler.\n\nCommand:\n{' '.join(cmd)}\n\nError:\n{exc}"
                 ))
+                if run_headless:
+                    cleanup_cellprofiler_temp_artifacts(
+                        image_input,
+                        input_dir,
+                        pipeline_path,
+                        configured_pipeline_path
+                    )
                 return
 
             if run_headless and result and result.returncode != 0:
@@ -973,16 +1020,27 @@ class SegmentationPanel(ttk.LabelFrame):
                     f"Return code: {result.returncode}\n\n"
                     f"stderr:\n{stderr_tail or '(empty)'}"
                 ))
+                cleanup_cellprofiler_temp_artifacts(
+                    image_input,
+                    input_dir,
+                    pipeline_path,
+                    configured_pipeline_path
+                )
                 return
 
             if run_headless:
+                cleanup_cellprofiler_temp_artifacts(
+                    image_input,
+                    input_dir,
+                    pipeline_path,
+                    configured_pipeline_path
+                )
                 self.after(0, lambda: self.status_callback("CellProfiler segmentation completed", "success", 100))
                 self.after(0, lambda: messagebox.showinfo(
                     "Segmentation Complete",
                     f"CellProfiler finished headless segmentation.\n\n"
-                    f"Input folder:\n{input_dir}\n\n"
                     f"Output folder:\n{output_dir}\n\n"
-                    f"Pipeline:\n{configured_pipeline_path}\n\n"
+                    f"Pipeline preset:\n{pipeline_path}\n\n"
                     f"Export mode:\n{export_mode}"
                 ))
             else:
@@ -1027,27 +1085,11 @@ class MaskingPanel(ttk.LabelFrame):
             "SHG Images",
             "SHG image files",
             "image/*",
-            "Select one or more SHG image files. The MATLAB runner uses files ending in _0000.tif.",
+            "Select one or more SHG image files.",
             icon='folder',
             allow_multiple=True
         )
         self.shg_upload.pack(fill=tk.BOTH, expand=True)
-
-        info_frame = tk.Frame(self, bg="#eef5fb", relief=tk.RIDGE, bd=1)
-        info_frame.pack(fill=tk.X, pady=(0, 10))
-        tk.Label(
-            info_frame,
-            text=(
-                "Masking notes: the runner uses SHG files ending in _0000.tif. "
-                "ROI draw mode opens a MATLAB polygon window on the first image. "
-                "Save options below control masks, figures, stats text, and ROI TIFF output separately."
-            ),
-            bg="#eef5fb",
-            fg="#2c3e50",
-            justify=tk.LEFT,
-            wraplength=760,
-            font=("Arial", 9),
-        ).pack(anchor=tk.W, padx=10, pady=8)
 
         params_frame = tk.Frame(self, bg="#f0f0f0", relief=tk.RIDGE, bd=2)
         params_frame.pack(fill=tk.X, pady=(0, 10))
