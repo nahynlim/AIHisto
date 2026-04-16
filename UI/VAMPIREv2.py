@@ -1013,6 +1013,8 @@ class MaskingPanel(ttk.LabelFrame):
         self.enhance_var = tk.BooleanVar(value=False)
         self.create_mask_var = tk.BooleanVar(value=True)
         self.save_figures_var = tk.BooleanVar(value=True)
+        self.save_stats_var = tk.BooleanVar(value=True)
+        self.save_roi_var = tk.BooleanVar(value=True)
         self.overwrite_var = tk.BooleanVar(value=True)
         self.mask_output_type = tk.StringVar(value="all")
 
@@ -1031,6 +1033,22 @@ class MaskingPanel(ttk.LabelFrame):
         )
         self.shg_upload.pack(fill=tk.BOTH, expand=True)
 
+        info_frame = tk.Frame(self, bg="#eef5fb", relief=tk.RIDGE, bd=1)
+        info_frame.pack(fill=tk.X, pady=(0, 10))
+        tk.Label(
+            info_frame,
+            text=(
+                "Masking notes: the runner uses SHG files ending in _0000.tif. "
+                "ROI draw mode opens a MATLAB polygon window on the first image. "
+                "Save options below control masks, figures, stats text, and ROI TIFF output separately."
+            ),
+            bg="#eef5fb",
+            fg="#2c3e50",
+            justify=tk.LEFT,
+            wraplength=760,
+            font=("Arial", 9),
+        ).pack(anchor=tk.W, padx=10, pady=8)
+
         params_frame = tk.Frame(self, bg="#f0f0f0", relief=tk.RIDGE, bd=2)
         params_frame.pack(fill=tk.X, pady=(0, 10))
 
@@ -1043,6 +1061,9 @@ class MaskingPanel(ttk.LabelFrame):
         bundle_row = ttk.Frame(params_content)
         bundle_row.pack(fill=tk.X, pady=(0, 8))
         ttk.Label(bundle_row, text="Bundle Width", width=18).pack(side=tk.LEFT)
+        bundle_help = ttk.Label(bundle_row, text=" i", cursor="hand2")
+        bundle_help.pack(side=tk.LEFT, padx=(0, 8))
+        ToolTip(bundle_help, "Tile size in pixels used for FFT orientation analysis. Larger values smooth more but reduce local detail.")
         self.bundle_width = ttk.Entry(bundle_row, width=10)
         self.bundle_width.insert(0, "15")
         self.bundle_width.pack(side=tk.LEFT, padx=(0, 10))
@@ -1054,6 +1075,9 @@ class MaskingPanel(ttk.LabelFrame):
         percentile_row = ttk.Frame(params_content)
         percentile_row.pack(fill=tk.X, pady=(0, 8))
         ttk.Label(percentile_row, text="Low SHG Percentile", width=18).pack(side=tk.LEFT)
+        percentile_help = ttk.Label(percentile_row, text=" i", cursor="hand2")
+        percentile_help.pack(side=tk.LEFT, padx=(0, 8))
+        ToolTip(percentile_help, "Threshold percentile derived from normalized control-image SHG intensity. Lower values make the low-SHG mask more selective.")
         self.low_shg_percentile = ttk.Entry(percentile_row, width=10)
         self.low_shg_percentile.insert(0, "10")
         self.low_shg_percentile.pack(side=tk.LEFT)
@@ -1061,6 +1085,9 @@ class MaskingPanel(ttk.LabelFrame):
         mask_type_row = ttk.Frame(params_content)
         mask_type_row.pack(fill=tk.X, pady=(0, 8))
         ttk.Label(mask_type_row, text="Mask Output Type", width=18).pack(side=tk.LEFT)
+        mask_type_help = ttk.Label(mask_type_row, text=" i", cursor="hand2")
+        mask_type_help.pack(side=tk.LEFT, padx=(0, 8))
+        ToolTip(mask_type_help, "Choose which mask family to save. 'all' writes every supported mask output from the MATLAB run.")
         self.mask_output_combo = ttk.Combobox(
             mask_type_row,
             textvariable=self.mask_output_type,
@@ -1073,6 +1100,9 @@ class MaskingPanel(ttk.LabelFrame):
         roi_row = ttk.Frame(params_content)
         roi_row.pack(fill=tk.X, pady=(0, 8))
         ttk.Label(roi_row, text="ROI Mode", width=18).pack(side=tk.LEFT)
+        roi_help = ttk.Label(roi_row, text=" i", cursor="hand2")
+        roi_help.pack(side=tk.LEFT, padx=(0, 8))
+        ToolTip(roi_help, "auto uses MATLAB ROI autodetection, draw opens a MATLAB polygon tool, and none analyzes the full image.")
         self.roi_mode_combo = ttk.Combobox(
             roi_row,
             textvariable=self.roi_mode,
@@ -1085,6 +1115,9 @@ class MaskingPanel(ttk.LabelFrame):
         rotation_row = ttk.Frame(params_content)
         rotation_row.pack(fill=tk.X, pady=(0, 8))
         ttk.Label(rotation_row, text="Rotation Mode", width=18).pack(side=tk.LEFT)
+        rotation_help = ttk.Label(rotation_row, text=" i", cursor="hand2")
+        rotation_help.pack(side=tk.LEFT, padx=(0, 8))
+        ToolTip(rotation_help, "Rotate the SHG image before analysis. Use User Angle for custom rotation in degrees.")
         self.rotation_mode_combo = ttk.Combobox(
             rotation_row,
             textvariable=self.rotation_mode,
@@ -1104,10 +1137,18 @@ class MaskingPanel(ttk.LabelFrame):
         ttk.Checkbutton(checks_row_one, text="Enhance Images", variable=self.enhance_var).pack(side=tk.LEFT, padx=(0, 12))
         ttk.Checkbutton(checks_row_one, text="Create Masks", variable=self.create_mask_var).pack(side=tk.LEFT, padx=(0, 12))
         ttk.Checkbutton(checks_row_one, text="Save Figures", variable=self.save_figures_var).pack(side=tk.LEFT)
+        save_help_one = ttk.Label(checks_row_one, text=" i", cursor="hand2")
+        save_help_one.pack(side=tk.LEFT, padx=(8, 0))
+        ToolTip(save_help_one, "Create Masks saves the selected mask outputs. Save Figures writes MATLAB QC plots such as quiver and histogram figures.")
 
         checks_row_two = ttk.Frame(params_content)
         checks_row_two.pack(fill=tk.X)
+        ttk.Checkbutton(checks_row_two, text="Save Stats TXT", variable=self.save_stats_var).pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Checkbutton(checks_row_two, text="Save ROI TIF", variable=self.save_roi_var).pack(side=tk.LEFT, padx=(0, 12))
         ttk.Checkbutton(checks_row_two, text="Overwrite Existing Files", variable=self.overwrite_var).pack(side=tk.LEFT)
+        save_help_two = ttk.Label(checks_row_two, text=" i", cursor="hand2")
+        save_help_two.pack(side=tk.LEFT, padx=(8, 0))
+        ToolTip(save_help_two, "Save Stats TXT writes summary text outputs. Save ROI TIF stores the ROI mask image. Overwrite controls whether existing files are replaced.")
         self.toggle_user_angle()
         
         # Output directory
@@ -1176,25 +1217,25 @@ class MaskingPanel(ttk.LabelFrame):
             messagebox.showerror("Error", "Bundle size, percentile, and angle must be valid numbers.")
             return
 
-        if self.roi_mode.get() == "draw":
-            self.status_callback("Error: ROI draw mode is not yet wired into the GUI", 'error', 0)
-            messagebox.showerror(
-                "ROI Draw Not Ready",
-                "ROI draw mode still needs GUI polygon capture. Use 'auto' or 'none' for now."
-            )
-            return
-
         shg_input = self.shg_upload.get_file()
         roi_mode = self.roi_mode.get()
         rot_mode = self.rotation_mode_map.get(self.rotation_mode.get(), "none")
         do_enhance = self.enhance_var.get()
         do_mask = self.create_mask_var.get()
         save_figures = self.save_figures_var.get()
+        save_stats = self.save_stats_var.get()
+        save_roi = self.save_roi_var.get()
         overwrite_flag = self.overwrite_var.get()
         mask_output_type = self.mask_output_type.get()
 
         def process():
             try:
+                if roi_mode == "draw":
+                    self.after(0, lambda: self.status_callback(
+                        "MATLAB will open an ROI window for polygon drawing...",
+                        "processing",
+                        50
+                    ))
                 run_matlab_mask_job(
                     shg_input,
                     out_dir,
@@ -1203,6 +1244,8 @@ class MaskingPanel(ttk.LabelFrame):
                     do_enhance=do_enhance,
                     do_mask=do_mask,
                     save_figure=save_figures,
+                    save_stats=save_stats,
+                    save_roi=save_roi,
                     roi_mode=roi_mode,
                     mask_verts=None,
                     low_shg_percentile=low_shg_percentile,

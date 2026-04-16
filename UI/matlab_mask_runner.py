@@ -58,6 +58,8 @@ def run_matlab_mask_job(
     do_enhance: bool = False,
     do_mask: bool = True,
     save_figure: bool = True,
+    save_stats: bool = True,
+    save_roi: bool = True,
     roi_mode: str = "auto",
     mask_verts: Optional[list[list[float]]] = None,
     low_shg_percentile: float = 10.0,
@@ -81,9 +83,6 @@ def run_matlab_mask_job(
         raise ValueError("Rotation mode must be one of: none, vertical, horizontal, user.")
     if mask_types not in {"all", "damaged", "undamaged", "low_shg", "high_shg"}:
         raise ValueError("Mask output type must be one of: all, damaged, undamaged, low_shg, high_shg.")
-    if roi_mode == "draw" and not mask_verts:
-        raise ValueError("ROI draw mode requires polygon vertices from the GUI.")
-
     base_dir = os.path.dirname(os.path.abspath(__file__))
     script_dir = _resolve_matlab_dir(base_dir)
     os.makedirs(out_dir, exist_ok=True)
@@ -132,8 +131,8 @@ def run_matlab_mask_job(
             "user_angle", float(user_angle),
             "mask_types", str(mask_types),
             "save_masks", bool(do_mask),
-            "save_stats", True,
-            "save_roi", True,
+            "save_stats", bool(save_stats),
+            "save_roi", bool(save_roi),
             "save_figures", bool(save_figure),
             "overwrite", bool(overwrite_flag),
         ])
