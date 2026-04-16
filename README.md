@@ -29,8 +29,6 @@ UI/
 └── Supplementary Data/       # Example data
 ```
 
----
-
 # Requirements:
 
 ## Python
