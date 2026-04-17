@@ -1,6 +1,6 @@
 <img width="1079" height="1079" alt="TEAM25_VisualDiagram" src="https://github.com/user-attachments/assets/319f46cb-f465-42d3-b20c-0e819f80e234" />
 
-# About:
+# DRACULA: Deep Reconstruction and Analysis of Cells Using Labeling and Architecture:
 <name> is a GUI-based pipeline for microscopy image analysis that integrates:
 
 - **CellProfiler** for image segmentation  
