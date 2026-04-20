@@ -41,17 +41,14 @@ def check_label_status(im):
 
 
 def mask2boundary(mask):
-    contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    contour = np.empty(2)
-    for i in range(len(contours[0])):
-        contour = np.vstack((contours[0][i][0], contour))
-    contour = contour[0:-1]
-    contour.T[0] = contour.T[0] + 1
-    contour.T[1] = contour.T[1] + 1
-    boundary = np.empty((2, len(contour.T[1])))
-    boundary[0] = contour.T[1]
-    boundary[1] = contour.T[0]
-    boundary = boundary.T.astype(int)
+    contours, hierarchy = cv2.findContours(np.ascontiguousarray(mask, dtype=np.uint8), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return np.empty((0, 2), dtype=int)
+    c = max(contours, key=len)
+    contour = c[:, 0, :]
+    contour[:, 0] += 1
+    contour[:, 1] += 1
+    boundary = np.column_stack([contour[:, 1], contour[:, 0]]).astype(int)
     return boundary
 
 
@@ -137,7 +134,7 @@ def getboundary(csv, progress_bar, entries):
             raise Exception('boundary coordinates length does not match registry length')
 
         if not os.path.exists(boundarydst):
-            df = pd.DataFrame(boundarymaster)
+            df = pd.DataFrame({0: pd.array(boundarymaster, dtype=object)})
             df.to_pickle(boundarydst)
             # Hide the file on Windows (safe no-op on other OSes)
             try:
