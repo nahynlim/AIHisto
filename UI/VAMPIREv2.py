@@ -1342,7 +1342,7 @@ class BuildModelPanel(ttk.LabelFrame):
             "Image Folder",
             "Image folder",
             "image/*",
-            "Optional image folder reference. The current build-model backend still runs from the CSV input."
+            "Optional direct folder input. If no CSV is provided, the GUI will auto-generate a build-model CSV from this folder."
         )
         self.raw_upload.pack(fill=tk.BOTH, expand=True)
         
@@ -1453,9 +1453,10 @@ class BuildModelPanel(ttk.LabelFrame):
     def build_model(self):
         """Build model by running getboundary + mainbody pipeline."""
         csv_path = self.csv_upload.get_file()
-        if not csv_path:
-            self.status_callback("Error: Please select a model-build CSV file", 'error', 0)
-            messagebox.showerror("Error", "Please select a model-build CSV file")
+        image_folder = self.raw_upload.get_file()
+        if not csv_path and not image_folder:
+            self.status_callback("Error: Please select a model-build CSV file or image folder", 'error', 0)
+            messagebox.showerror("Error", "Please select a model-build CSV file or image folder")
             return
 
         if not self.model_name.get().strip():
@@ -1473,6 +1474,8 @@ class BuildModelPanel(ttk.LabelFrame):
         clnum = str(self.shape_modes_var.get())
         outpth = self.output_folder.get().strip()
         model_name = self.model_name.get().strip()
+        if not csv_path and image_folder:
+            csv_path = self.create_build_dataset_csv(image_folder, outpth)
 
         def process():
             status_state = {"message": "Initializing model build..."}
@@ -1534,6 +1537,23 @@ class BuildModelPanel(ttk.LabelFrame):
 
         # Run on main thread: legacy pipeline uses Tk/Matplotlib TkAgg internally.
         process()
+
+    def create_build_dataset_csv(self, image_folder, output_folder):
+        """Create a temporary dataset CSV so build-model can run from a folder."""
+        image_folder = os.path.abspath(image_folder)
+        output_folder = os.path.abspath(output_folder)
+        os.makedirs(output_folder, exist_ok=True)
+
+        folder_name = os.path.basename(os.path.normpath(image_folder)) or "dataset"
+        csv_path = os.path.join(output_folder, f"{folder_name}_build_dataset.csv")
+        return create_vampire_input_csv(
+            [image_folder],
+            [folder_name],
+            csv_path,
+            tag="",
+            mode="build",
+            note="Auto-generated from Build Model folder selection",
+        )
     
     def save_model(self, model_data):
         """Save the built model"""

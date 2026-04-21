@@ -13,7 +13,7 @@ from scipy import stats, cluster, spatial, special
 from sklearn.cluster import KMeans
 from sklearn import preprocessing
 import matplotlib as mpl
-mpl.use("TkAgg")
+mpl.use("Agg")
 from matplotlib import pyplot as plt
 
 
