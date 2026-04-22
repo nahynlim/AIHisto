@@ -8,3 +8,4 @@ opencv-python
 scikit-image
 scikit-learn
 matlabengine
+PyQt6
