@@ -84,7 +84,7 @@ MATLAB is used for the SHG masking workflow.
 
 #### Important note for both Windows and macOS
 
-The GUI requires MATLAB itself and also MATLAB Engine for Python in the same Python environment used to launch `VAMPIREv2.py`.
+The GUI requires MATLAB itself and also MATLAB Engine for Python in the same Python environment used to launch `VAMPIREv3_pyqt6.py`.
 
 Python-version compatibility matters:
 
@@ -262,7 +262,7 @@ Option 2. If you do not want to install from `Program Files`, copy the MATLAB en
 
 ```cmd
 cd C:\path\to\AIHisto\UI
-python VAMPIREv2.py
+python VAMPIREv3_pyqt6.py
 ```
 
 ### macOS setup using Terminal
@@ -326,7 +326,7 @@ python3 -m pip install .
 
 ```bash
 cd /path/to/AIHisto/UI
-python3 VAMPIREv2.py
+python3 VAMPIREv3_pyqt6.py
 ```
 
 ### If you created the environment with the wrong Python version
@@ -374,13 +374,13 @@ source .venv/bin/activate
 After activating the environment and installing dependencies:
 
 ```cmd
-python VAMPIREv2.py
+python VAMPIREv3_pyqt6.py
 ```
 
 On macOS Terminal:
 
 ```bash
-python3 VAMPIREv2.py
+python3 VAMPIREv3_pyqt6.py
 ```
 
 ## How to Launch the GUI
@@ -392,7 +392,7 @@ The current recommended way to open the software is to run the Python GUI file d
 ```cmd
 cd C:\path\to\AIHisto\UI
 .venv\Scripts\activate
-python VAMPIREv2.py
+python VAMPIREv3_pyqt6.py
 ```
 
 ### macOS Terminal
@@ -400,7 +400,7 @@ python VAMPIREv2.py
 ```bash
 cd /path/to/AIHisto/UI
 source .venv/bin/activate
-python3 VAMPIREv2.py
+python3 VAMPIREv3_pyqt6.py
 ```
 
 ### Can this become an executable?
@@ -410,7 +410,7 @@ Yes, in the future this project could be packaged as:
 - a Windows `.exe`
 - a macOS `.app`
 
-However, the current project still depends on external software such as CellProfiler and MATLAB, so the most reliable method right now is to launch `VAMPIREv2.py` from an activated Python environment.
+However, the current project still depends on external software such as CellProfiler and MATLAB, so the most reliable method right now is to launch `VAMPIREv3_pyqt6.py` from an activated Python environment.
 
 ## Repository File Organization
 
@@ -422,7 +422,7 @@ The project root is the `UI/` folder. A typical layout now looks like:
 
 ```text
 UI/
-├─ VAMPIREv2.py
+├─ VAMPIREv3_pyqt6.py
 ├─ vampire/
 │  ├─ __init__.py
 │  ├─ mainbody.py
@@ -444,7 +444,7 @@ UI/
 ### Important paths users may need
 
 - GUI launcher:
-  - `UI/VAMPIREv2.py`
+  - `UI/VAMPIREv3_pyqt6.py`
 - Core VAMPIRE analysis code:
   - `UI/vampire/`
 - CellProfiler pipelines:
@@ -461,18 +461,18 @@ UI/
 On Windows, a full path may look like:
 
 ```text
-C:\path\to\AIHisto\UI\VAMPIREv2.py
+C:\path\to\AIHisto\UI\VAMPIREv3_pyqt6.py
 ```
 
 On macOS, a full path may look like:
 
 ```text
-/path/to/AIHisto/UI/VAMPIREv2.py
+/path/to/AIHisto/UI/VAMPIREv3_pyqt6.py
 ```
 
 ### Main Python files
 
-- `VAMPIREv2.py`
+- `VAMPIREv3_pyqt6.py`
   - Main GUI used for segmentation, masking, model building, and model application.
 - `vampire.py`
   - Older legacy GUI.
@@ -587,7 +587,7 @@ Not every project needs every step. Some users may already have segmented images
 
 Use this section when starting from raw microscopy images.
 
-1. Open the GUI with `python VAMPIREv2.py`.
+1. Open the GUI with `python VAMPIREv3_pyqt6.py`.
 2. In the `SEGMENTATION` panel, choose one or more raw image files.
 3. Select the segmentation pipeline you want to use.
 4. Confirm the CellProfiler executable path.
@@ -740,7 +740,7 @@ This README is a working draft. Good next improvements would be:
 If you already have all software installed:
 
 1. Activate the Python environment.
-2. Launch `VAMPIREv2.py`.
+2. Launch `VAMPIREv3_pyqt6.py`.
 3. Segment images if needed.
 4. Create SHG masks if needed.
 5. Build a model from segmented-image dataset CSVs.
