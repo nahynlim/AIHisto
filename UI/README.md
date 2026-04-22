@@ -14,7 +14,7 @@ The current workflow has up to four major stages:
 The main GUI entry point is:
 
 ```cmd
-python VAMPIREv2.py
+python VAMPIREv3_pyqt6.py
 ```
 
 ## External Software Installation
@@ -195,7 +195,7 @@ Follow this order:
 5. Activate the virtual environment.
 6. Install the Python packages.
 7. Install `matlab.engine`.
-8. Launch `VAMPIREv2.py`.
+8. Launch `VAMPIREv3_pyqt6.py`.
 
 ### Windows setup using Command Prompt
 
